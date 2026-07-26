@@ -42,4 +42,5 @@ type Store interface {
 	CreateEvent(context.Context, CreateEventParams) (EventResult, error)
 	GetEvent(context.Context, string) (domain.Event, error)
 	ListDeliveries(context.Context, DeliveryFilter) ([]domain.Delivery, error)
+	ReplayDelivery(context.Context, string) error
 }

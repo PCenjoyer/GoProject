@@ -33,6 +33,7 @@ func (f *fakeStore) GetEvent(context.Context, string) (domain.Event, error) {
 func (f *fakeStore) ListDeliveries(context.Context, store.DeliveryFilter) ([]domain.Delivery, error) {
 	return []domain.Delivery{}, nil
 }
+func (f *fakeStore) ReplayDelivery(context.Context, string) error { return nil }
 
 func testAPI(dataStore store.Store) http.Handler {
 	return New(dataStore, slog.New(slog.NewTextHandler(io.Discard, nil))).Routes()

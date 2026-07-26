@@ -22,6 +22,9 @@ flowchart LR
    rescheduled with exponential backoff and full jitter. Permanent failures or an
    exhausted retry budget enter the DLQ.
 
+Manual replay resets the delivery retry budget but preserves every historical
+attempt, so an operator can compare the original failure with the replay.
+
 ## Failure model
 
 The ambiguous interval is deliberately visible: a receiver can commit the request
@@ -48,4 +51,3 @@ Claims use short leases so abandoned work is recoverable.
 
 Production deployments should encrypt endpoint secrets at rest and apply an
 egress allowlist to prevent server-side request forgery.
-

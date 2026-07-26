@@ -185,3 +185,26 @@ func (s *Postgres) ListDeliveries(ctx context.Context, filter DeliveryFilter) ([
 	}
 	return deliveries, rows.Err()
 }
+
+func (s *Postgres) ReplayDelivery(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE deliveries
+		SET status = 'retrying',
+		    attempt_count = 0,
+		    next_attempt_at = now(),
+		    locked_at = NULL,
+		    locked_by = NULL,
+		    last_status_code = NULL,
+		    last_error = NULL,
+		    updated_at = now()
+		WHERE id = $1 AND status = 'dead'`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("replay delivery: %w", err)
+	}
+	if tag.RowsAffected() != 1 {
+		return ErrNotFound
+	}
+	return nil
+}

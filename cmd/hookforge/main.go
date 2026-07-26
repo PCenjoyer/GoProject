@@ -3,15 +3,18 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/PCenjoyer/GoProject/internal/api"
 	"github.com/PCenjoyer/GoProject/internal/config"
 	"github.com/PCenjoyer/GoProject/internal/database"
+	"github.com/PCenjoyer/GoProject/internal/delivery"
 	"github.com/PCenjoyer/GoProject/internal/store"
 )
 
@@ -45,6 +48,20 @@ func run(logger *slog.Logger) error {
 	}
 
 	apiHandler := api.New(store.NewPostgres(pool), logger).Routes()
+	workerID := workerIdentity()
+	runner := delivery.NewRunner(delivery.Config{
+		WorkerCount:         cfg.WorkerCount,
+		PollInterval:        cfg.PollInterval,
+		DeliveryTimeout:     cfg.DeliveryTimeout,
+		LeaseDuration:       cfg.DeliveryTimeout + 10*time.Second,
+		MaxAttempts:         cfg.MaxAttempts,
+		EndpointConcurrency: cfg.EndpointConcurrency,
+	}, delivery.NewPostgresStore(pool), logger, workerID)
+	workersDone := make(chan struct{})
+	go func() {
+		defer close(workersDone)
+		runner.Run(rootCtx)
+	}()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -82,5 +99,21 @@ func run(logger *slog.Logger) error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 	defer cancel()
-	return server.Shutdown(shutdownCtx)
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
+	select {
+	case <-workersDone:
+		return nil
+	case <-shutdownCtx.Done():
+		return shutdownCtx.Err()
+	}
+}
+
+func workerIdentity() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "hookforge"
+	}
+	return fmt.Sprintf("%s-%d", hostname, os.Getpid())
 }

@@ -15,6 +15,8 @@ stable event ID and an HMAC signature so consumers can verify and deduplicate it
 - transactional schema migrations embedded in the binary
 - idempotent event ingestion with transactional endpoint fan-out
 - endpoint and delivery query APIs with bounded pagination
+- bounded delivery workers with per-endpoint noisy-neighbour isolation
+- signed webhooks, full-jitter retries, stale-lease recovery, and a DLQ
 - liveness and database readiness probes
 - graceful HTTP shutdown
 - container image and local Compose environment
@@ -59,6 +61,17 @@ curl -sS http://localhost:8080/v1/events \
 
 The first request returns `202 Accepted`; a repeat with the same idempotency key
 returns the original event with `200 OK` and `"duplicate": true`.
+
+Inspect the DLQ and replay a corrected delivery:
+
+```bash
+curl -sS 'http://localhost:8080/v1/deliveries?status=dead'
+curl -i -X POST http://localhost:8080/v1/deliveries/DELIVERY_ID/replay
+```
+
+Receivers verify `X-HookForge-Signature`, whose value is
+`v1=HMAC_SHA256(secret, timestamp + "." + raw_request_body)`, and deduplicate on
+`X-HookForge-Event-ID`.
 
 ## Engineering guarantees
 

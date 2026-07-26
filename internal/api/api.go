@@ -35,6 +35,7 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/events", a.createEvent)
 	mux.HandleFunc("GET /v1/events/{id}", a.getEvent)
 	mux.HandleFunc("GET /v1/deliveries", a.listDeliveries)
+	mux.HandleFunc("POST /v1/deliveries/{id}/replay", a.replayDelivery)
 	return requestLog(a.logger, recoverPanic(a.logger, mux))
 }
 
@@ -183,6 +184,19 @@ func (a *API) listDeliveries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": deliveries})
+}
+
+func (a *API) replayDelivery(w http.ResponseWriter, r *http.Request) {
+	err := a.store.ReplayDelivery(r.Context(), r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "dead-letter delivery not found")
+		return
+	}
+	if err != nil {
+		a.internalError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) internalError(w http.ResponseWriter, r *http.Request, err error) {
