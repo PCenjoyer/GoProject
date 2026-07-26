@@ -1,19 +1,30 @@
 openapi: 3.1.0
 info:
   title: HookForge API
-  version: 1.0.0
-  description: Durable, at-least-once webhook delivery.
+  version: 1.1.0
+  description: Authenticated, tenant-isolated, at-least-once webhook delivery.
 servers:
   - url: http://localhost:8080
+security:
+  - bearerAuth: []
 paths:
+  /:
+    get:
+      security: []
+      summary: Service information
+      responses:
+        "200":
+          description: Service metadata and health links
   /healthz:
     get:
+      security: []
       summary: Process liveness
       responses:
         "200":
           description: Process is alive
   /readyz:
     get:
+      security: []
       summary: Database readiness
       responses:
         "200":
@@ -42,6 +53,8 @@ paths:
                     $ref: "#/components/schemas/Endpoint"
                   secret:
                     type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "422":
           $ref: "#/components/responses/ValidationError"
     get:
@@ -49,6 +62,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/Limit"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Endpoint list
           content:
@@ -79,6 +94,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateEvent"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "202":
           description: New event durably accepted
           content:
@@ -99,6 +116,8 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ID"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Event
           content:
@@ -117,6 +136,8 @@ paths:
           schema:
             $ref: "#/components/schemas/DeliveryStatus"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "200":
           description: Delivery list
           content:
@@ -135,11 +156,19 @@ paths:
       parameters:
         - $ref: "#/components/parameters/ID"
       responses:
+        "401":
+          $ref: "#/components/responses/Unauthorized"
         "204":
           description: Delivery scheduled for replay
         "404":
           $ref: "#/components/responses/NotFound"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: HookForge API key
+      description: The key determines the tenant; clients never submit tenant IDs.
   parameters:
     ID:
       name: id
@@ -157,6 +186,16 @@ components:
         maximum: 200
         default: 50
   responses:
+    Unauthorized:
+      description: Missing or invalid tenant API key
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     ValidationError:
       description: Input validation failed
       content:
@@ -182,6 +221,7 @@ components:
         url:
           type: string
           format: uri
+          description: Must resolve exclusively to public network addresses.
     Endpoint:
       type: object
       required: [id, name, url, enabled, created_at, updated_at]

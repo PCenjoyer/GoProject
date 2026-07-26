@@ -5,6 +5,7 @@
 ```mermaid
 flowchart LR
     P[Producer] -->|POST event| A[HTTP API]
+    K[Bearer API key] --> A
     A -->|single transaction| DB[(PostgreSQL)]
     DB --> Q[Claim loop]
     Q --> W[Bounded workers]
@@ -25,6 +26,20 @@ flowchart LR
 Manual replay resets the delivery retry budget but preserves every historical
 attempt, so an operator can compare the original failure with the replay.
 
+## Authentication and tenant boundary
+
+API keys contain a random public prefix and a 256-bit secret. PostgreSQL stores
+only a SHA-256 digest of the complete key. The prefix selects one candidate record;
+the application verifies the digest with a constant-time comparison.
+
+The authenticated key places a server-created tenant principal in the request
+context. Clients cannot supply or override a tenant ID. Every endpoint, event,
+delivery, and replay query includes that trusted `tenant_id`, and idempotency keys
+are unique inside a tenant rather than globally.
+
+Additional tenants are provisioned through an offline CLI command, which returns
+the initial API key once.
+
 ## Failure model
 
 The ambiguous interval is deliberately visible: a receiver can commit the request
@@ -43,11 +58,18 @@ Claims use short leases so abandoned work is recoverable.
 
 ## Security boundaries
 
-- Endpoint URLs are validated as HTTP(S) at creation time.
+- All `/v1` routes require a Bearer API key.
+- Endpoint URLs are restricted to HTTP(S) and resolved at creation time.
+- A custom dialer resolves and filters DNS again for every outbound connection,
+  blocking loopback, private, link-local, metadata, multicast, and reserved ranges.
+- Webhook redirects and environment-configured outbound proxies are disabled.
 - Secrets are never returned by read APIs or logged.
+- Endpoint signing secrets are encrypted with AES-256-GCM. Tenant and endpoint IDs
+  are authenticated as associated data, preventing ciphertext relocation.
 - Payload authenticity uses HMAC-SHA256 over the timestamp and exact body.
 - Response bodies are bounded before capture.
 - Server and delivery timeouts are explicit.
 
-Production deployments should encrypt endpoint secrets at rest and apply an
-egress allowlist to prevent server-side request forgery.
+Production deployments should additionally enforce an infrastructure egress
+allowlist, keep diagnostics on a private network, and store encryption keys in a
+managed secret service.

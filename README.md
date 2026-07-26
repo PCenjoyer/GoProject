@@ -12,6 +12,10 @@ receivers can observe a duplicate when a process dies after the receiver accepts
 request but before HookForge commits success. Every delivery therefore includes a
 stable event ID and an HMAC signature so consumers can verify and deduplicate it.
 
+Every API request is authenticated with a high-entropy Bearer key. The key selects
+a tenant, and all endpoint, event, delivery, and replay queries are scoped to that
+tenant. Endpoint signing secrets are encrypted at rest with AES-256-GCM.
+
 ## Current capabilities
 
 - PostgreSQL-backed durable event and delivery model
@@ -21,6 +25,9 @@ stable event ID and an HMAC signature so consumers can verify and deduplicate it
 - bounded delivery workers with per-endpoint noisy-neighbour isolation
 - signed webhooks, full-jitter retries, stale-lease recovery, and a DLQ
 - Prometheus metrics, pprof diagnostics, and a provisioned Grafana dashboard
+- Bearer API-key authentication and tenant isolation
+- DNS-rebinding-resistant SSRF protection
+- AES-256-GCM encryption for endpoint signing secrets
 - liveness and database readiness probes
 - graceful HTTP shutdown
 - container image and local Compose environment
@@ -33,16 +40,20 @@ observability packages so each reliability boundary is testable in isolation.
 Requirements: Go 1.25+ and PostgreSQL 17+ (or Docker).
 
 ```bash
-cp .env.example .env
+go run ./cmd/hookforge generate-secrets > .env
 docker compose up --build
 curl http://localhost:8080/readyz
 ```
 
-Without Docker, create the database from `.env.example`, then run:
+On Windows PowerShell, preserve the plain-text environment-file encoding:
 
-```bash
-go run ./cmd/hookforge
+```powershell
+go run ./cmd/hookforge generate-secrets | Out-File -Encoding ascii .env
+docker compose up --build
 ```
+
+Keep `.env` private and backed up securely. Changing
+`HOOKFORGE_SECRET_ENCRYPTION_KEY` makes existing endpoint secrets unreadable.
 
 ## API walkthrough
 
@@ -50,6 +61,7 @@ Create an endpoint. Its signing secret is returned once:
 
 ```bash
 curl -sS http://localhost:8080/v1/endpoints \
+  -H "Authorization: Bearer $HOOKFORGE_BOOTSTRAP_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"name":"orders","url":"https://example.com/webhooks"}'
 ```
@@ -58,6 +70,7 @@ Submit an event using the returned endpoint ID:
 
 ```bash
 curl -sS http://localhost:8080/v1/events \
+  -H "Authorization: Bearer $HOOKFORGE_BOOTSTRAP_API_KEY" \
   -H 'Content-Type: application/json' \
   -H 'Idempotency-Key: checkout-order-42' \
   -d '{"type":"order.created","payload":{"order_id":"42"},"endpoint_ids":["ENDPOINT_ID"]}'
@@ -69,13 +82,27 @@ returns the original event with `200 OK` and `"duplicate": true`.
 Inspect the DLQ and replay a corrected delivery:
 
 ```bash
-curl -sS 'http://localhost:8080/v1/deliveries?status=dead'
-curl -i -X POST http://localhost:8080/v1/deliveries/DELIVERY_ID/replay
+curl -sS 'http://localhost:8080/v1/deliveries?status=dead' \
+  -H "Authorization: Bearer $HOOKFORGE_BOOTSTRAP_API_KEY"
+curl -i -X POST http://localhost:8080/v1/deliveries/DELIVERY_ID/replay \
+  -H "Authorization: Bearer $HOOKFORGE_BOOTSTRAP_API_KEY"
 ```
 
 Receivers verify `X-HookForge-Signature`, whose value is
 `v1=HMAC_SHA256(secret, timestamp + "." + raw_request_body)`, and deduplicate on
 `X-HookForge-Event-ID`.
+
+To provision another isolated tenant and receive its initial API key:
+
+```bash
+docker compose run --rm hookforge provision-tenant \
+  --slug acme --name "Acme Corporation"
+```
+
+Private, loopback, link-local, metadata, and other non-public endpoint addresses
+are blocked by default at both registration and connection time. Local webhook
+testing can explicitly set `HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS=true`; never enable
+that override in production.
 
 Operational dashboards are available at `http://localhost:3000` after Compose
 starts. See [docs/runbook.md](docs/runbook.md) for alerting and incident procedures.
@@ -92,6 +119,9 @@ The complete HTTP contract is in [docs/openapi.yaml](docs/openapi.yaml).
 | Poison events | Explicit dead-letter state with manual replay |
 | Backpressure | Fixed global worker pool and per-endpoint concurrency limits |
 | Shutdown | Stop claiming, drain in-flight work, then close dependencies |
+| Tenant isolation | Tenant identity comes only from an authenticated API key |
+| Secret storage | AES-256-GCM with random nonces and tenant/endpoint-bound AAD |
+| SSRF | URL validation plus DNS-aware filtering on every outbound connection |
 
 See [docs/architecture.md](docs/architecture.md) for the system design and failure
 model.

@@ -136,6 +136,58 @@ DLQ расшифровывается как dead-letter queue. Туда попа
 Секрет возвращается при создании endpoint только один раз. Его нельзя публиковать
 в Git или записывать в обычные логи.
 
+### API-ключ и аутентификация
+
+API-ключ доказывает HookForge, кто выполняет запрос. Он передаётся в HTTP-заголовке:
+
+```text
+Authorization: Bearer hf.публичный-префикс.случайный-секрет
+```
+
+В базе хранится не сам ключ, а только его SHA-256 digest. По сохранённому значению
+нельзя восстановить исходный ключ. Если ключ потерян, необходимо выпустить новый.
+
+Health endpoints `/healthz` и `/readyz` доступны без ключа, но все адреса `/v1`
+защищены.
+
+### Tenant и multi-tenancy
+
+Tenant — отдельная организация или клиент. Каждый API-ключ принадлежит одному
+tenant. Сервер сам определяет tenant по проверенному ключу: клиент не может
+подставить чужой `tenant_id`.
+
+Все запросы к endpoint, event, delivery и replay дополнительно ограничиваются
+этим tenant. Даже одинаковые `Idempotency-Key` у двух организаций создают два
+независимых события.
+
+### Шифрование секретов
+
+Webhook secret нужен worker в исходном виде для создания HMAC-подписи, поэтому
+одного необратимого хеширования недостаточно. HookForge шифрует его алгоритмом
+AES-256-GCM.
+
+Для каждого секрета создаётся новый случайный nonce, а tenant ID и endpoint ID
+включаются как authenticated associated data. Копирование ciphertext к другому
+endpoint приведёт к ошибке расшифрования.
+
+Главный ключ находится только в переменной
+`HOOKFORGE_SECRET_ENCRYPTION_KEY`. Если потерять или заменить его, существующие
+endpoint secrets расшифровать не получится.
+
+### SSRF-защита
+
+Без защиты пользователь мог бы указать endpoint вроде
+`http://127.0.0.1:5432` или адрес облачного metadata-сервиса и заставить HookForge
+обращаться во внутреннюю сеть.
+
+По умолчанию HookForge разрешает только публичные HTTP(S)-адреса. Он проверяет DNS
+при создании endpoint и повторяет проверку непосредственно перед каждым
+соединением. Это также защищает от DNS rebinding. Redirect-ответы не переходят на
+другой адрес автоматически.
+
+Флаг `HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS=true` отключает сетевое ограничение только
+для локального тестирования. В production его включать нельзя.
+
 ## Как проходит одно событие
 
 ```mermaid
@@ -223,7 +275,7 @@ ID.
 
 ## Первый запуск
 
-Самый простой путь — установить Git и Docker Desktop.
+Самый простой путь — установить Git, Go и Docker Desktop.
 
 Склонируйте репозиторий:
 
@@ -232,7 +284,25 @@ git clone https://github.com/PCenjoyer/GoProject.git
 cd GoProject
 ```
 
-Запустите систему:
+Перед первым запуском создайте уникальные API и encryption keys, а также пароли
+PostgreSQL и Grafana:
+
+```powershell
+go run ./cmd/hookforge generate-secrets | Out-File -Encoding ascii .env
+```
+
+Команда сохраняет четыре случайных секрета в `.env`. Этот файл уже добавлен в
+`.gitignore`: не публикуйте его и не отправляйте другим людям.
+
+Для проверки локального Python-получателя ниже явно разрешите private endpoint:
+
+```powershell
+Add-Content -Encoding ascii .env "HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS=true"
+```
+
+Это только dev-настройка. Для настоящего сервера оставьте значение `false`.
+
+Теперь запустите систему:
 
 ```bash
 docker compose up --build
@@ -257,6 +327,18 @@ curl.exe http://localhost:8080/readyz
 
 ```text
 ready
+```
+
+Если открыть в браузере `http://localhost`, браузер использует порт `80`, на
+котором HookForge не работает, и показывает `ERR_CONNECTION_REFUSED`. Правильный
+адрес — `http://localhost:8080/`. На нём отображается короткая JSON-информация о
+сервисе. У проекта пока нет графического пользовательского интерфейса.
+
+Считайте bootstrap API key из `.env` в переменную PowerShell:
+
+```powershell
+$apiKey = ((Get-Content .env | Where-Object { $_ -like "HOOKFORGE_BOOTSTRAP_API_KEY=*" }) -replace "^[^=]+=", "")
+$authHeaders = @{Authorization = "Bearer $apiKey"}
 ```
 
 ## Проверка настоящей доставки
@@ -298,6 +380,7 @@ $endpoint = Invoke-RestMethod `
     -Method Post `
     -Uri "http://localhost:8080/v1/endpoints" `
     -ContentType "application/json" `
+    -Headers $authHeaders `
     -Body $endpointBody
 
 $endpoint
@@ -320,7 +403,10 @@ Invoke-RestMethod `
     -Method Post `
     -Uri "http://localhost:8080/v1/events" `
     -ContentType "application/json" `
-    -Headers @{"Idempotency-Key" = "first-order-42"} `
+    -Headers @{
+        Authorization = "Bearer $apiKey"
+        "Idempotency-Key" = "first-order-42"
+    } `
     -Body $eventBody
 ```
 
@@ -329,10 +415,27 @@ Invoke-RestMethod `
 Посмотреть доставки можно командой:
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8080/v1/deliveries" | ConvertTo-Json -Depth 5
+$deliveries = Invoke-RestMethod `
+    -Uri "http://localhost:8080/v1/deliveries" `
+    -Headers $authHeaders
+$deliveries | ConvertTo-Json -Depth 5
 ```
 
 У успешно доставленной задачи будет статус `succeeded`.
+
+## Создание второго tenant
+
+Дополнительная организация создаётся административной CLI-командой:
+
+```powershell
+docker compose run --rm hookforge provision-tenant `
+    --slug second-company `
+    --name "Second Company"
+```
+
+Команда один раз напечатает новый API-ключ. Запросы с этим ключом увидят только
+endpoint, events и deliveries организации `second-company`. Они не увидят данные
+tenant `default`, даже если знают UUID его объектов.
 
 ## Как увидеть retry
 
@@ -343,7 +446,10 @@ Invoke-RestMethod -Uri "http://localhost:8080/v1/deliveries" | ConvertTo-Json -D
 После следующей команды будут видны число попыток и последняя ошибка:
 
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8080/v1/deliveries?status=retrying" | ConvertTo-Json -Depth 5
+$retrying = Invoke-RestMethod `
+    -Uri "http://localhost:8080/v1/deliveries?status=retrying" `
+    -Headers $authHeaders
+$retrying | ConvertTo-Json -Depth 5
 ```
 
 Запустите получателя снова. После очередной попытки статус изменится на
@@ -399,6 +505,25 @@ docker compose logs postgres
 Это ожидаемая работа идемпотентности. Для нового события используйте новый
 `Idempotency-Key`.
 
+### Ответ `401 unauthorized`
+
+У запроса отсутствует заголовок `Authorization` либо передан неправильный
+API-ключ. Повторно считайте `HOOKFORGE_BOOTSTRAP_API_KEY` из `.env` и сформируйте
+`$authHeaders`, как показано выше.
+
+### Endpoint отклонён как non-public address
+
+Сработала SSRF-защита. Private, loopback, link-local и metadata-сети запрещены по
+умолчанию. Для локального получателя можно установить
+`HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS=true`, перезапустить Compose и никогда не
+переносить эту настройку в production.
+
+### Ошибка расшифрования endpoint secret
+
+Запущено приложение с другим `HOOKFORGE_SECRET_ENCRYPTION_KEY`. Верните исходный
+ключ из secret manager или резервной копии `.env`. Создание нового ключа не
+восстановит старые secrets.
+
 ## Что показывают Prometheus и Grafana
 
 Prometheus регулярно читает числовые метрики HookForge. Grafana строит по ним
@@ -419,6 +544,7 @@ p95 означает: 95% операций завершились не медл�
 
 - запускает все тесты с детектором гонок;
 - выполняет `go vet`;
+- выполняет `govulncheck` по базе известных Go-уязвимостей;
 - собирает бинарный файл;
 - собирает Docker image.
 
@@ -427,14 +553,14 @@ p95 означает: 95% операций завершились не медл�
 
 ## Что ещё требуется перед реальным production
 
-Текущая реализация показывает надёжную доставку и подходит как сильный учебный или
-портфолио-проект. Перед хранением реальных клиентских данных необходимо добавить:
+Текущая реализация уже содержит Bearer-аутентификацию, tenant isolation,
+AES-256-GCM шифрование endpoint secrets и SSRF-защиту. Она подходит как сильный
+учебный или портфолио-проект. Перед хранением реальных клиентских данных всё ещё
+необходимо обеспечить:
 
-- аутентификацию и авторизацию API;
-- изоляцию организаций и пользователей;
-- шифрование секретов endpoint в базе;
-- защиту исходящих запросов от SSRF;
-- TLS и управление ключами;
+- TLS на ingress или service mesh;
+- managed secret storage и процедуру ротации encryption keys;
+- роли пользователей и отдельный административный контур;
 - резервное копирование и проверку восстановления;
 - правила хранения и удаления старых событий;
 - production-настройки PostgreSQL и мониторинга.
@@ -443,14 +569,11 @@ p95 означает: 95% операций завершились не медл�
 
 ## Идеи следующих этапов
 
-### 1. Multi-tenancy и безопасность
+### Реализовано: multi-tenancy и безопасность
 
-Добавить организации, API-ключи, роли и принадлежность каждого event/endpoint
-конкретной организации. Шифровать secrets в PostgreSQL, поддержать их ротацию и
-запретить доставку в loopback, private и metadata-сети.
-
-Это наиболее важное продолжение: оно превращает техническое ядро в основу
-реального SaaS.
+API-ключи, tenant isolation, шифрование secrets и запрет loopback/private/metadata
+сетей уже реализованы. Следующее усиление этого слоя — роли, аудит операций,
+отзыв ключей через API и автоматическая ротация encryption keys.
 
 ### 2. Управление endpoint
 
@@ -498,12 +621,11 @@ PostgreSQL, медленные endpoint и корректность восста
 
 ### Рекомендуемый порядок
 
-1. Multi-tenancy, API-ключи, SSRF-защита и шифрование secrets.
-2. Полное управление endpoint и audit log.
-3. Веб-интерфейс.
-4. Массовый replay с ограничением нагрузки.
-5. Chaos-тесты и подтверждённые benchmark-результаты.
-6. Горизонтальное масштабирование и долговременное хранение.
+1. Полное управление endpoint, API-ключами и audit log.
+2. Веб-интерфейс.
+3. Массовый replay с ограничением нагрузки.
+4. Chaos-тесты и подтверждённые benchmark-результаты.
+5. Горизонтальное масштабирование и долговременное хранение.
 
 Такой порядок сначала закрывает риски безопасности, затем улучшает демонстрацию и
 только после этого усложняет масштабирование.

@@ -11,6 +11,35 @@
 The default Compose environment serves Prometheus on
 `http://localhost:9091` and Grafana on `http://localhost:3000`.
 
+## Initial secrets and authentication
+
+Generate a fresh local environment before the first Compose start:
+
+```bash
+go run ./cmd/hookforge generate-secrets > .env
+docker compose up --build
+```
+
+The generated file contains the bootstrap API key, AES-256-GCM key, PostgreSQL
+password, and Grafana password. It is excluded from Git. Back it up in a secret
+manager; losing or changing the AES key makes stored endpoint signing secrets
+unreadable.
+
+All `/v1` requests require:
+
+```text
+Authorization: Bearer <tenant API key>
+```
+
+Provision an additional isolated tenant:
+
+```bash
+docker compose run --rm hookforge provision-tenant \
+  --slug acme --name "Acme Corporation"
+```
+
+The command prints the tenant API key once. Store it immediately.
+
 ## Alerts
 
 Recommended starting alerts:
@@ -47,3 +76,9 @@ Back up the PostgreSQL database with a tool appropriate for the deployment.
 `events`, `deliveries`, and `delivery_attempts` must be restored together. Schema
 migrations are forward-only and embedded in the application image.
 
+## SSRF policy
+
+HookForge blocks non-public endpoint networks both when an endpoint is created and
+when a worker opens each connection. Redirects are not followed. Treat
+`HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS=true` as an unsafe local-development override;
+never use it in production.
