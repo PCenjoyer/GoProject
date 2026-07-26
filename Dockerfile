@@ -8,6 +8,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/hookfor
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/hookforge /hookforge
 EXPOSE 8080
+EXPOSE 9090
 USER nonroot:nonroot
 ENTRYPOINT ["/hookforge"]
-

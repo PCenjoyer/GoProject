@@ -10,6 +10,7 @@ import (
 
 type Config struct {
 	HTTPAddr            string
+	DiagnosticsAddr     string
 	DatabaseURL         string
 	DatabaseMaxConns    int32
 	ShutdownTimeout     time.Duration
@@ -24,6 +25,7 @@ type Config struct {
 func Load() (Config, error) {
 	cfg := Config{
 		HTTPAddr:            env("HOOKFORGE_HTTP_ADDR", ":8080"),
+		DiagnosticsAddr:     env("HOOKFORGE_DIAGNOSTICS_ADDR", ":9090"),
 		DatabaseURL:         env("HOOKFORGE_DATABASE_URL", "postgres://hookforge:hookforge@localhost:5432/hookforge?sslmode=disable"),
 		LogLevel:            env("HOOKFORGE_LOG_LEVEL", "info"),
 		DatabaseMaxConns:    20,

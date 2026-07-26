@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"syscall"
@@ -15,11 +16,13 @@ import (
 	"github.com/PCenjoyer/GoProject/internal/config"
 	"github.com/PCenjoyer/GoProject/internal/database"
 	"github.com/PCenjoyer/GoProject/internal/delivery"
+	"github.com/PCenjoyer/GoProject/internal/observability"
 	"github.com/PCenjoyer/GoProject/internal/store"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	logger := newLogger()
 	if err := run(logger); err != nil {
 		logger.Error("hookforge stopped", "error", err)
 		os.Exit(1)
@@ -47,7 +50,8 @@ func run(logger *slog.Logger) error {
 		return nil
 	}
 
-	apiHandler := api.New(store.NewPostgres(pool), logger).Routes()
+	metrics := observability.NewMetrics()
+	apiHandler := metrics.HTTPMiddleware(api.New(store.NewPostgres(pool), logger).Routes())
 	workerID := workerIdentity()
 	runner := delivery.NewRunner(delivery.Config{
 		WorkerCount:         cfg.WorkerCount,
@@ -57,6 +61,7 @@ func run(logger *slog.Logger) error {
 		MaxAttempts:         cfg.MaxAttempts,
 		EndpointConcurrency: cfg.EndpointConcurrency,
 	}, delivery.NewPostgresStore(pool), logger, workerID)
+	runner.SetMetrics(metrics)
 	workersDone := make(chan struct{})
 	go func() {
 		defer close(workersDone)
@@ -80,20 +85,40 @@ func run(logger *slog.Logger) error {
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
 		Handler:           mux,
-		ReadHeaderTimeout: 5_000_000_000,
-		IdleTimeout:       60_000_000_000,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
-	serverErr := make(chan error, 1)
+	diagnosticsMux := http.NewServeMux()
+	diagnosticsMux.Handle("/metrics", promhttp.HandlerFor(metrics.Registry(), promhttp.HandlerOpts{}))
+	diagnosticsMux.HandleFunc("/debug/pprof/", pprof.Index)
+	diagnosticsMux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	diagnosticsMux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	diagnosticsMux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	diagnosticsMux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	diagnosticsServer := &http.Server{
+		Addr:              cfg.DiagnosticsAddr,
+		Handler:           diagnosticsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+
+	serverErr := make(chan error, 2)
 	go func() {
 		logger.Info("http server started", "address", cfg.HTTPAddr)
 		serverErr <- server.ListenAndServe()
 	}()
+	go func() {
+		logger.Info("diagnostics server started", "address", cfg.DiagnosticsAddr)
+		serverErr <- diagnosticsServer.ListenAndServe()
+	}()
 
+	var serveErr error
 	select {
 	case <-rootCtx.Done():
 	case err := <-serverErr:
+		stop()
 		if !errors.Is(err, http.ErrServerClosed) {
-			return err
+			serveErr = err
 		}
 	}
 
@@ -102,12 +127,30 @@ func run(logger *slog.Logger) error {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		return err
 	}
+	if err := diagnosticsServer.Shutdown(shutdownCtx); err != nil {
+		return err
+	}
 	select {
 	case <-workersDone:
-		return nil
+		return serveErr
 	case <-shutdownCtx.Done():
 		return shutdownCtx.Err()
 	}
+}
+
+func newLogger() *slog.Logger {
+	level := new(slog.LevelVar)
+	switch os.Getenv("HOOKFORGE_LOG_LEVEL") {
+	case "debug":
+		level.Set(slog.LevelDebug)
+	case "warn":
+		level.Set(slog.LevelWarn)
+	case "error":
+		level.Set(slog.LevelError)
+	default:
+		level.Set(slog.LevelInfo)
+	}
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 }
 
 func workerIdentity() string {

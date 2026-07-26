@@ -1,0 +1,49 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Delivery rate",
+      "targets": [{"expr": "sum(rate(hookforge_delivery_attempts_total[5m]))", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Outcomes",
+      "targets": [{"expr": "sum by (outcome) (rate(hookforge_delivery_attempts_total[5m]))", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 9, "x": 6, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "Attempt p95",
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le) (rate(hookforge_delivery_attempt_duration_seconds_bucket[5m])))", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 9, "x": 15, "y": 0}
+    },
+    {
+      "type": "timeseries",
+      "title": "In flight",
+      "targets": [{"expr": "hookforge_delivery_inflight", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "Endpoint saturation",
+      "targets": [{"expr": "rate(hookforge_delivery_endpoint_saturation_total[5m])", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 8}
+    },
+    {
+      "type": "timeseries",
+      "title": "API p95",
+      "targets": [{"expr": "histogram_quantile(0.95, sum by (le, route) (rate(hookforge_http_request_duration_seconds_bucket[5m])))", "refId": "A"}],
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 8}
+    }
+  ],
+  "schemaVersion": 41,
+  "tags": ["hookforge"],
+  "templating": {"list": []},
+  "time": {"from": "now-30m", "to": "now"},
+  "title": "HookForge Overview",
+  "uid": "hookforge-overview",
+  "version": 1
+}

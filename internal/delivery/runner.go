@@ -38,7 +38,24 @@ type Runner struct {
 	limiters *endpointLimiters
 	now      func() time.Time
 	jitter   func(time.Duration) time.Duration
+	metrics  Metrics
 }
+
+type Metrics interface {
+	ClaimSucceeded()
+	ClaimFailed()
+	EndpointDeferred()
+	AttemptStarted()
+	AttemptFinished(string, time.Duration)
+}
+
+type noopMetrics struct{}
+
+func (noopMetrics) ClaimSucceeded()                       {}
+func (noopMetrics) ClaimFailed()                          {}
+func (noopMetrics) EndpointDeferred()                     {}
+func (noopMetrics) AttemptStarted()                       {}
+func (noopMetrics) AttemptFinished(string, time.Duration) {}
 
 func NewRunner(cfg Config, dataStore Store, logger *slog.Logger, workerID string) *Runner {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -60,6 +77,13 @@ func NewRunner(cfg Config, dataStore Store, logger *slog.Logger, workerID string
 			}
 			return time.Duration(rand.Int64N(int64(max)))
 		},
+		metrics: noopMetrics{},
+	}
+}
+
+func (r *Runner) SetMetrics(metrics Metrics) {
+	if metrics != nil {
+		r.metrics = metrics
 	}
 }
 
@@ -89,6 +113,7 @@ func (r *Runner) worker(ctx context.Context, workerNumber int) {
 
 		task, ok, err := r.store.Claim(ctx, r.workerID, r.cfg.LeaseDuration)
 		if err != nil {
+			r.metrics.ClaimFailed()
 			if !errors.Is(err, context.Canceled) {
 				r.logger.Error("claim failed", "worker", workerNumber, "error", err)
 			}
@@ -99,7 +124,9 @@ func (r *Runner) worker(ctx context.Context, workerNumber int) {
 			timer.Reset(r.cfg.PollInterval)
 			continue
 		}
+		r.metrics.ClaimSucceeded()
 		if !r.limiters.tryAcquire(task.EndpointID) {
+			r.metrics.EndpointDeferred()
 			next := r.now().Add(r.cfg.PollInterval)
 			deferCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			err := r.store.Defer(deferCtx, r.workerID, task, next)
@@ -119,6 +146,7 @@ func (r *Runner) worker(ctx context.Context, workerNumber int) {
 
 func (r *Runner) process(task Task) {
 	started := r.now()
+	r.metrics.AttemptStarted()
 	statusCode, deliveryErr := r.send(task, started)
 	finished := r.now()
 
@@ -146,6 +174,13 @@ func (r *Runner) process(task Task) {
 	default:
 		result.NextTryAt = finished.Add(r.jitter(backoff(task.Attempt)))
 	}
+	outcome := "retry"
+	if result.Dead {
+		outcome = "dead"
+	} else if result.Error == "" {
+		outcome = "success"
+	}
+	r.metrics.AttemptFinished(outcome, finished.Sub(started))
 
 	persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

@@ -17,12 +17,13 @@ stable event ID and an HMAC signature so consumers can verify and deduplicate it
 - endpoint and delivery query APIs with bounded pagination
 - bounded delivery workers with per-endpoint noisy-neighbour isolation
 - signed webhooks, full-jitter retries, stale-lease recovery, and a DLQ
+- Prometheus metrics, pprof diagnostics, and a provisioned Grafana dashboard
 - liveness and database readiness probes
 - graceful HTTP shutdown
 - container image and local Compose environment
 
-The event API, worker pool, retries, DLQ, metrics, and replay tooling are developed
-as separate, reviewable stages.
+The implementation is organized as separate API, persistence, delivery, and
+observability packages so each reliability boundary is testable in isolation.
 
 ## Quick start
 
@@ -72,6 +73,10 @@ curl -i -X POST http://localhost:8080/v1/deliveries/DELIVERY_ID/replay
 Receivers verify `X-HookForge-Signature`, whose value is
 `v1=HMAC_SHA256(secret, timestamp + "." + raw_request_body)`, and deduplicate on
 `X-HookForge-Event-ID`.
+
+Operational dashboards are available at `http://localhost:3000` after Compose
+starts. See [docs/runbook.md](docs/runbook.md) for alerting and incident procedures.
+The complete HTTP contract is in [docs/openapi.yaml](docs/openapi.yaml).
 
 ## Engineering guarantees
 
