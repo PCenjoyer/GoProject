@@ -9,8 +9,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/PCenjoyer/GoProject/internal/api"
 	"github.com/PCenjoyer/GoProject/internal/config"
 	"github.com/PCenjoyer/GoProject/internal/database"
+	"github.com/PCenjoyer/GoProject/internal/store"
 )
 
 func main() {
@@ -42,6 +44,7 @@ func run(logger *slog.Logger) error {
 		return nil
 	}
 
+	apiHandler := api.New(store.NewPostgres(pool), logger).Routes()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -55,6 +58,7 @@ func run(logger *slog.Logger) error {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ready\n"))
 	})
+	mux.Handle("/", apiHandler)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,

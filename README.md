@@ -13,6 +13,8 @@ stable event ID and an HMAC signature so consumers can verify and deduplicate it
 
 - PostgreSQL-backed durable event and delivery model
 - transactional schema migrations embedded in the binary
+- idempotent event ingestion with transactional endpoint fan-out
+- endpoint and delivery query APIs with bounded pagination
 - liveness and database readiness probes
 - graceful HTTP shutdown
 - container image and local Compose environment
@@ -35,6 +37,28 @@ Without Docker, create the database from `.env.example`, then run:
 ```bash
 go run ./cmd/hookforge
 ```
+
+## API walkthrough
+
+Create an endpoint. Its signing secret is returned once:
+
+```bash
+curl -sS http://localhost:8080/v1/endpoints \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"orders","url":"https://example.com/webhooks"}'
+```
+
+Submit an event using the returned endpoint ID:
+
+```bash
+curl -sS http://localhost:8080/v1/events \
+  -H 'Content-Type: application/json' \
+  -H 'Idempotency-Key: checkout-order-42' \
+  -d '{"type":"order.created","payload":{"order_id":"42"},"endpoint_ids":["ENDPOINT_ID"]}'
+```
+
+The first request returns `202 Accepted`; a repeat with the same idempotency key
+returns the original event with `200 OK` and `"duplicate": true`.
 
 ## Engineering guarantees
 
@@ -62,4 +86,3 @@ make lint
 ## License
 
 MIT
-
