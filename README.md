@@ -4,6 +4,9 @@ HookForge is a reliable webhook delivery service written in Go. Producers submit
 event once; HookForge persists it before acknowledging the request and delivers it
 to one or more HTTP endpoints with **at-least-once** semantics.
 
+New to webhooks, APIs, or Go? Start with the
+[beginner-friendly Russian guide](docs/beginner-guide.ru.md).
+
 The project is intentionally honest about distributed-systems guarantees:
 receivers can observe a duplicate when a process dies after the receiver accepts a
 request but before HookForge commits success. Every delivery therefore includes a
