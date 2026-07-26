@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: HookForge API
-  version: 1.1.0
+  version: 1.2.0
   description: Authenticated, tenant-isolated, at-least-once webhook delivery.
 servers:
   - url: http://localhost:8080
@@ -14,7 +14,23 @@ paths:
       summary: Service information
       responses:
         "200":
-          description: Service metadata and health links
+          description: Embedded HookForge operator console
+          content:
+            text/html:
+              schema:
+                type: string
+  /v1/me:
+    get:
+      summary: Get the authenticated tenant
+      responses:
+        "200":
+          description: Tenant and API-key identity selected by the Bearer key
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Principal"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /healthz:
     get:
       security: []
@@ -209,6 +225,28 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
   schemas:
+    Principal:
+      type: object
+      required: [tenant, api_key]
+      properties:
+        tenant:
+          type: object
+          required: [id, slug, name]
+          properties:
+            id:
+              type: string
+              format: uuid
+            slug:
+              type: string
+            name:
+              type: string
+        api_key:
+          type: object
+          required: [id]
+          properties:
+            id:
+              type: string
+              format: uuid
     CreateEndpoint:
       type: object
       additionalProperties: false

@@ -67,6 +67,41 @@ func TestCreateEndpointBlocksPrivateNetwork(t *testing.T) {
 	}
 }
 
+func TestMeReturnsAuthenticatedTenant(t *testing.T) {
+	routes := New(
+		&fakeStore{},
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ssrf.NewPolicy(true),
+	).Routes()
+	request := httptest.NewRequest(http.MethodGet, "/v1/me", nil)
+	request = request.WithContext(auth.WithPrincipal(request.Context(), auth.Principal{
+		TenantID:   "tenant-1",
+		TenantSlug: "acme",
+		TenantName: "Acme Corporation",
+		APIKeyID:   "key-1",
+	}))
+	response := httptest.NewRecorder()
+
+	routes.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	var body struct {
+		Tenant struct {
+			ID   string `json:"id"`
+			Slug string `json:"slug"`
+			Name string `json:"name"`
+		} `json:"tenant"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Tenant.ID != "tenant-1" || body.Tenant.Slug != "acme" || body.Tenant.Name != "Acme Corporation" {
+		t.Fatalf("unexpected tenant: %+v", body.Tenant)
+	}
+}
+
 func TestCreateEventRequiresIdempotencyKey(t *testing.T) {
 	handler := testAPI(&fakeStore{})
 	request := httptest.NewRequest(http.MethodPost, "/v1/events", strings.NewReader(

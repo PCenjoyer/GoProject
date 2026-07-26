@@ -32,6 +32,7 @@ func New(dataStore store.Store, logger *slog.Logger, policy *ssrf.Policy) *API {
 
 func (a *API) Routes() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/me", a.me)
 	mux.HandleFunc("POST /v1/endpoints", a.createEndpoint)
 	mux.HandleFunc("GET /v1/endpoints", a.listEndpoints)
 	mux.HandleFunc("POST /v1/events", a.createEvent)
@@ -39,6 +40,23 @@ func (a *API) Routes() http.Handler {
 	mux.HandleFunc("GET /v1/deliveries", a.listDeliveries)
 	mux.HandleFunc("POST /v1/deliveries/{id}/replay", a.replayDelivery)
 	return requestLog(a.logger, recoverPanic(a.logger, mux))
+}
+
+func (a *API) me(w http.ResponseWriter, r *http.Request) {
+	principal, ok := auth.PrincipalFromContext(r.Context())
+	if !ok {
+		panic("authenticated route called without tenant principal")
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"tenant": map[string]string{
+			"id":   principal.TenantID,
+			"slug": principal.TenantSlug,
+			"name": principal.TenantName,
+		},
+		"api_key": map[string]string{
+			"id": principal.APIKeyID,
+		},
+	})
 }
 
 type createEndpointRequest struct {

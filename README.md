@@ -25,6 +25,7 @@ tenant. Endpoint signing secrets are encrypted at rest with AES-256-GCM.
 - bounded delivery workers with per-endpoint noisy-neighbour isolation
 - signed webhooks, full-jitter retries, stale-lease recovery, and a DLQ
 - Prometheus metrics, pprof diagnostics, and a provisioned Grafana dashboard
+- embedded operator console for endpoints, events, delivery status, and DLQ replay
 - Bearer API-key authentication and tenant isolation
 - DNS-rebinding-resistant SSRF protection
 - AES-256-GCM encryption for endpoint signing secrets
@@ -37,7 +38,7 @@ observability packages so each reliability boundary is testable in isolation.
 
 ## Quick start
 
-Requirements: Go 1.25+ and PostgreSQL 17+ (or Docker).
+Requirements: Go 1.26.5+ and PostgreSQL 17+ (or Docker).
 
 ```bash
 go run ./cmd/hookforge generate-secrets > .env
@@ -54,6 +55,12 @@ docker compose up --build
 
 Keep `.env` private and backed up securely. Changing
 `HOOKFORGE_SECRET_ENCRYPTION_KEY` makes existing endpoint secrets unreadable.
+
+Open `http://localhost:8080/` and sign in with the value of
+`HOOKFORGE_BOOTSTRAP_API_KEY` from `.env`. The console keeps the key only in the
+current browser tab and provides endpoint creation, event submission, delivery
+filters, status counters, and dead-letter replay. No separate frontend process or
+Node.js installation is required.
 
 ## API walkthrough
 

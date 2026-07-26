@@ -24,6 +24,7 @@ import (
 	"github.com/PCenjoyer/GoProject/internal/secretbox"
 	"github.com/PCenjoyer/GoProject/internal/ssrf"
 	"github.com/PCenjoyer/GoProject/internal/store"
+	"github.com/PCenjoyer/GoProject/internal/webui"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -109,10 +110,9 @@ func run(logger *slog.Logger) error {
 		runner.Run(rootCtx)
 	}()
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"service":"HookForge","status":"running","health":"/healthz","readiness":"/readyz","api":"/v1"}` + "\n"))
-	})
+	console := webui.Handler()
+	mux.Handle("GET /{$}", console)
+	mux.Handle("GET /assets/", console)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok\n"))
@@ -239,7 +239,7 @@ func provisionTenant(ctx context.Context, service *auth.Service, args []string) 
 
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")

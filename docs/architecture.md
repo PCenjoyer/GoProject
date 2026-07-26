@@ -4,7 +4,8 @@
 
 ```mermaid
 flowchart LR
-    P[Producer] -->|POST event| A[HTTP API]
+    U[Operator console] -->|same-origin API| A[HTTP API]
+    P[Producer] -->|POST event| A
     K[Bearer API key] --> A
     A -->|single transaction| DB[(PostgreSQL)]
     DB --> Q[Claim loop]
@@ -39,6 +40,12 @@ are unique inside a tenant rather than globally.
 
 Additional tenants are provisioned through an offline CLI command, which returns
 the initial API key once.
+
+The operator console is a dependency-free set of embedded static assets served by
+the same Go binary. It uses the same authenticated `/v1` API as every other
+client, keeps the API key only in the current tab's memory, and never accepts a
+client-supplied tenant ID. A restrictive Content Security Policy permits scripts,
+styles, images, and API connections only from the same origin.
 
 ## Failure model
 
