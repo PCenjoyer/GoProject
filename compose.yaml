@@ -1,0 +1,33 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: hookforge
+      POSTGRES_USER: hookforge
+      POSTGRES_PASSWORD: hookforge
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hookforge -d hookforge"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  hookforge:
+    build: .
+    environment:
+      HOOKFORGE_HTTP_ADDR: :8080
+      HOOKFORGE_DATABASE_URL: postgres://hookforge:hookforge@postgres:5432/hookforge?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    init: true
+    stop_grace_period: 20s
+
+volumes:
+  postgres-data:
+
