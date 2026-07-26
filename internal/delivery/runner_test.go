@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/PCenjoyer/GoProject/internal/ssrf"
 )
 
 type memoryStore struct {
@@ -32,7 +34,7 @@ func testRunner(dataStore Store) *Runner {
 		LeaseDuration:       time.Minute,
 		MaxAttempts:         3,
 		EndpointConcurrency: 1,
-	}, dataStore, slog.New(slog.NewTextHandler(io.Discard, nil)), "test-worker")
+	}, dataStore, slog.New(slog.NewTextHandler(io.Discard, nil)), "test-worker", ssrf.NewPolicy(true))
 	runner.now = func() time.Time { return time.Unix(1_700_000_000, 0).UTC() }
 	runner.jitter = func(max time.Duration) time.Duration { return max / 2 }
 	return runner

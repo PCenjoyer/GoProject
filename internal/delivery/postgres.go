@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/PCenjoyer/GoProject/internal/secretbox"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PostgresStore struct {
-	pool *pgxpool.Pool
+	pool      *pgxpool.Pool
+	secretBox *secretbox.Box
 }
 
-func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
-	return &PostgresStore{pool: pool}
+func NewPostgresStore(pool *pgxpool.Pool, box *secretbox.Box) *PostgresStore {
+	return &PostgresStore{pool: pool, secretBox: box}
 }
 
 func (s *PostgresStore) Claim(
@@ -24,10 +26,12 @@ func (s *PostgresStore) Claim(
 	leaseDuration time.Duration,
 ) (Task, bool, error) {
 	var task Task
+	var ciphertext, nonce []byte
 	err := s.pool.QueryRow(ctx, `
 		WITH ready AS (
 			SELECT d.id, d.event_id, d.endpoint_id, d.attempt_count + 1 AS attempt,
-			       e.type, e.payload, ep.url, ep.secret
+			       e.tenant_id, e.type, e.payload, ep.url,
+			       ep.secret_ciphertext, ep.secret_nonce
 			FROM deliveries d
 			JOIN events e ON e.id = d.event_id
 			JOIN endpoints ep ON ep.id = d.endpoint_id
@@ -48,17 +52,20 @@ func (s *PostgresStore) Claim(
 		    updated_at = now()
 		FROM ready
 		WHERE d.id = ready.id
-		RETURNING d.id::text, ready.event_id::text, ready.type, ready.payload,
-		          ready.endpoint_id::text, ready.url, ready.secret, ready.attempt`,
+		RETURNING ready.tenant_id::text, d.id::text, ready.event_id::text,
+		          ready.type, ready.payload, ready.endpoint_id::text, ready.url,
+		          ready.secret_ciphertext, ready.secret_nonce, ready.attempt`,
 		workerID, interval(leaseDuration),
 	).Scan(
+		&task.TenantID,
 		&task.DeliveryID,
 		&task.EventID,
 		&task.EventType,
 		&task.Payload,
 		&task.EndpointID,
 		&task.URL,
-		&task.Secret,
+		&ciphertext,
+		&nonce,
 		&task.Attempt,
 	)
 	if err != nil {
@@ -66,6 +73,14 @@ func (s *PostgresStore) Claim(
 			return Task{}, false, nil
 		}
 		return Task{}, false, fmt.Errorf("claim delivery: %w", err)
+	}
+	task.Secret, err = s.secretBox.Decrypt(
+		ciphertext,
+		nonce,
+		secretbox.AssociatedData(task.TenantID, task.EndpointID),
+	)
+	if err != nil {
+		return Task{}, false, fmt.Errorf("decrypt claimed endpoint secret: %w", err)
 	}
 	return task, true, nil
 }

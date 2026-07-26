@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/PCenjoyer/GoProject/internal/ssrf"
 )
 
 const maxResponseBody = 4 << 10
@@ -57,16 +59,30 @@ func (noopMetrics) EndpointDeferred()                     {}
 func (noopMetrics) AttemptStarted()                       {}
 func (noopMetrics) AttemptFinished(string, time.Duration) {}
 
-func NewRunner(cfg Config, dataStore Store, logger *slog.Logger, workerID string) *Runner {
+func NewRunner(
+	cfg Config,
+	dataStore Store,
+	logger *slog.Logger,
+	workerID string,
+	policy *ssrf.Policy,
+) *Runner {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = policy.DialContext
 	transport.MaxIdleConns = cfg.WorkerCount * 2
 	transport.MaxIdleConnsPerHost = cfg.EndpointConcurrency
 	transport.ResponseHeaderTimeout = cfg.DeliveryTimeout
 
 	return &Runner{
-		cfg:      cfg,
-		store:    dataStore,
-		client:   &http.Client{Transport: transport},
+		cfg:   cfg,
+		store: dataStore,
+		client: &http.Client{
+			Transport: transport,
+			Timeout:   cfg.DeliveryTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return errors.New("webhook redirects are disabled")
+			},
+		},
 		logger:   logger,
 		workerID: workerID,
 		limiters: newEndpointLimiters(cfg.EndpointConcurrency),

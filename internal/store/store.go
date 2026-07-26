@@ -14,12 +14,14 @@ var (
 )
 
 type CreateEndpointParams struct {
-	Name   string
-	URL    string
-	Secret string
+	TenantID string
+	Name     string
+	URL      string
+	Secret   string
 }
 
 type CreateEventParams struct {
+	TenantID       string
 	IdempotencyKey string
 	Type           string
 	Payload        json.RawMessage
@@ -32,15 +34,16 @@ type EventResult struct {
 }
 
 type DeliveryFilter struct {
-	Status domain.DeliveryStatus
-	Limit  int
+	TenantID string
+	Status   domain.DeliveryStatus
+	Limit    int
 }
 
 type Store interface {
 	CreateEndpoint(context.Context, CreateEndpointParams) (domain.Endpoint, error)
-	ListEndpoints(context.Context, int) ([]domain.Endpoint, error)
+	ListEndpoints(context.Context, string, int) ([]domain.Endpoint, error)
 	CreateEvent(context.Context, CreateEventParams) (EventResult, error)
-	GetEvent(context.Context, string) (domain.Event, error)
+	GetEvent(context.Context, string, string) (domain.Event, error)
 	ListDeliveries(context.Context, DeliveryFilter) ([]domain.Delivery, error)
-	ReplayDelivery(context.Context, string) error
+	ReplayDelivery(context.Context, string, string) error
 }

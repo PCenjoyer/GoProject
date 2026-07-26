@@ -4,14 +4,14 @@ services:
     environment:
       POSTGRES_DB: hookforge
       POSTGRES_USER: hookforge
-      POSTGRES_PASSWORD: hookforge
+      POSTGRES_PASSWORD: ${HOOKFORGE_POSTGRES_PASSWORD:?run hookforge generate-secrets and save the output to .env}
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hookforge -d hookforge"]
       interval: 3s
       timeout: 3s
       retries: 20
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
@@ -20,12 +20,17 @@ services:
     environment:
       HOOKFORGE_HTTP_ADDR: :8080
       HOOKFORGE_DIAGNOSTICS_ADDR: :9090
-      HOOKFORGE_DATABASE_URL: postgres://hookforge:hookforge@postgres:5432/hookforge?sslmode=disable
+      HOOKFORGE_DATABASE_URL: postgres://hookforge:${HOOKFORGE_POSTGRES_PASSWORD}@postgres:5432/hookforge?sslmode=disable
+      HOOKFORGE_SECRET_ENCRYPTION_KEY: ${HOOKFORGE_SECRET_ENCRYPTION_KEY:?run hookforge generate-secrets and save the output to .env}
+      HOOKFORGE_BOOTSTRAP_API_KEY: ${HOOKFORGE_BOOTSTRAP_API_KEY:-}
+      HOOKFORGE_BOOTSTRAP_TENANT_SLUG: ${HOOKFORGE_BOOTSTRAP_TENANT_SLUG:-default}
+      HOOKFORGE_BOOTSTRAP_TENANT_NAME: ${HOOKFORGE_BOOTSTRAP_TENANT_NAME:-Default tenant}
+      HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS: ${HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS:-false}
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     init: true
     stop_grace_period: 20s
 
@@ -35,7 +40,7 @@ services:
     volumes:
       - ./ops/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9091:9090"
+      - "127.0.0.1:9091:9090"
     depends_on:
       - hookforge
 
@@ -43,14 +48,14 @@ services:
     image: grafana/grafana:12.1.0
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${HOOKFORGE_GRAFANA_ADMIN_PASSWORD:?run hookforge generate-secrets and save the output to .env}
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
       - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
 

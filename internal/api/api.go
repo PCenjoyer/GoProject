@@ -9,11 +9,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/PCenjoyer/GoProject/internal/auth"
 	"github.com/PCenjoyer/GoProject/internal/domain"
+	"github.com/PCenjoyer/GoProject/internal/ssrf"
 	"github.com/PCenjoyer/GoProject/internal/store"
 )
 
@@ -22,10 +23,11 @@ const maxRequestBody = 1 << 20
 type API struct {
 	store  store.Store
 	logger *slog.Logger
+	ssrf   *ssrf.Policy
 }
 
-func New(dataStore store.Store, logger *slog.Logger) *API {
-	return &API{store: dataStore, logger: logger}
+func New(dataStore store.Store, logger *slog.Logger, policy *ssrf.Policy) *API {
+	return &API{store: dataStore, logger: logger, ssrf: policy}
 }
 
 func (a *API) Routes() http.Handler {
@@ -56,7 +58,7 @@ func (a *API) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "validation_error", "name must contain 1 to 120 characters")
 		return
 	}
-	if err := validateEndpointURL(input.URL); err != nil {
+	if err := a.ssrf.ValidateURL(r.Context(), input.URL); err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
 		return
 	}
@@ -66,7 +68,10 @@ func (a *API) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	endpoint, err := a.store.CreateEndpoint(r.Context(), store.CreateEndpointParams{
-		Name: input.Name, URL: input.URL, Secret: secret,
+		TenantID: tenantID(r),
+		Name:     input.Name,
+		URL:      input.URL,
+		Secret:   secret,
 	})
 	if err != nil {
 		a.internalError(w, r, err)
@@ -84,7 +89,7 @@ func (a *API) listEndpoints(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
-	endpoints, err := a.store.ListEndpoints(r.Context(), limit)
+	endpoints, err := a.store.ListEndpoints(r.Context(), tenantID(r), limit)
 	if err != nil {
 		a.internalError(w, r, err)
 		return
@@ -128,6 +133,7 @@ func (a *API) createEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := a.store.CreateEvent(r.Context(), store.CreateEventParams{
+		TenantID:       tenantID(r),
 		IdempotencyKey: idempotencyKey,
 		Type:           input.Type,
 		Payload:        input.Payload,
@@ -152,7 +158,7 @@ func (a *API) createEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) getEvent(w http.ResponseWriter, r *http.Request) {
-	event, err := a.store.GetEvent(r.Context(), r.PathValue("id"))
+	event, err := a.store.GetEvent(r.Context(), tenantID(r), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "event not found")
 		return
@@ -176,8 +182,9 @@ func (a *API) listDeliveries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deliveries, err := a.store.ListDeliveries(r.Context(), store.DeliveryFilter{
-		Status: status,
-		Limit:  limit,
+		TenantID: tenantID(r),
+		Status:   status,
+		Limit:    limit,
 	})
 	if err != nil {
 		a.internalError(w, r, err)
@@ -187,7 +194,7 @@ func (a *API) listDeliveries(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) replayDelivery(w http.ResponseWriter, r *http.Request) {
-	err := a.store.ReplayDelivery(r.Context(), r.PathValue("id"))
+	err := a.store.ReplayDelivery(r.Context(), tenantID(r), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "not_found", "dead-letter delivery not found")
 		return
@@ -204,26 +211,20 @@ func (a *API) internalError(w http.ResponseWriter, r *http.Request, err error) {
 	writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 }
 
-func validateEndpointURL(raw string) error {
-	parsed, err := url.ParseRequestURI(raw)
-	if err != nil || parsed.Hostname() == "" {
-		return errors.New("url must be an absolute HTTP(S) URL")
-	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return errors.New("url scheme must be http or https")
-	}
-	if parsed.User != nil {
-		return errors.New("url must not contain credentials")
-	}
-	return nil
-}
-
 func generateSecret() (string, error) {
 	value := make([]byte, 32)
 	if _, err := rand.Read(value); err != nil {
 		return "", fmt.Errorf("generate endpoint secret: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(value), nil
+}
+
+func tenantID(r *http.Request) string {
+	principal, ok := auth.PrincipalFromContext(r.Context())
+	if !ok {
+		panic("authenticated route called without tenant principal")
+	}
+	return principal.TenantID
 }
 
 func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {

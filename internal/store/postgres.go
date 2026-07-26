@@ -6,30 +6,37 @@ import (
 	"fmt"
 
 	"github.com/PCenjoyer/GoProject/internal/domain"
+	"github.com/PCenjoyer/GoProject/internal/secretbox"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Postgres struct {
-	pool *pgxpool.Pool
+	pool      *pgxpool.Pool
+	secretBox *secretbox.Box
 }
 
-func NewPostgres(pool *pgxpool.Pool) *Postgres {
-	return &Postgres{pool: pool}
+func NewPostgres(pool *pgxpool.Pool, box *secretbox.Box) *Postgres {
+	return &Postgres{pool: pool, secretBox: box}
 }
 
 func (s *Postgres) CreateEndpoint(ctx context.Context, params CreateEndpointParams) (domain.Endpoint, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return domain.Endpoint{}, fmt.Errorf("begin create endpoint: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
 	var endpoint domain.Endpoint
-	err := s.pool.QueryRow(ctx, `
-		INSERT INTO endpoints (name, url, secret)
+	err = tx.QueryRow(ctx, `
+		INSERT INTO endpoints (tenant_id, name, url)
 		VALUES ($1, $2, $3)
-		RETURNING id::text, name, url, secret, enabled, created_at, updated_at`,
-		params.Name, params.URL, params.Secret,
+		RETURNING id::text, name, url, enabled, created_at, updated_at`,
+		params.TenantID, params.Name, params.URL,
 	).Scan(
 		&endpoint.ID,
 		&endpoint.Name,
 		&endpoint.URL,
-		&endpoint.Secret,
 		&endpoint.Enabled,
 		&endpoint.CreatedAt,
 		&endpoint.UpdatedAt,
@@ -37,15 +44,34 @@ func (s *Postgres) CreateEndpoint(ctx context.Context, params CreateEndpointPara
 	if err != nil {
 		return domain.Endpoint{}, fmt.Errorf("create endpoint: %w", err)
 	}
+	ciphertext, nonce, err := s.secretBox.Encrypt(
+		params.Secret,
+		secretbox.AssociatedData(params.TenantID, endpoint.ID),
+	)
+	if err != nil {
+		return domain.Endpoint{}, err
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE endpoints
+		SET secret_ciphertext = $2, secret_nonce = $3, secret_key_version = 1
+		WHERE id = $1`,
+		endpoint.ID, ciphertext, nonce,
+	); err != nil {
+		return domain.Endpoint{}, fmt.Errorf("encrypt endpoint secret: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.Endpoint{}, fmt.Errorf("commit create endpoint: %w", err)
+	}
 	return endpoint, nil
 }
 
-func (s *Postgres) ListEndpoints(ctx context.Context, limit int) ([]domain.Endpoint, error) {
+func (s *Postgres) ListEndpoints(ctx context.Context, tenantID string, limit int) ([]domain.Endpoint, error) {
 	rows, err := s.pool.Query(ctx, `
 		SELECT id::text, name, url, enabled, created_at, updated_at
 		FROM endpoints
+		WHERE tenant_id = $1
 		ORDER BY created_at DESC
-		LIMIT $1`, limit)
+		LIMIT $2`, tenantID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints: %w", err)
 	}
@@ -78,11 +104,11 @@ func (s *Postgres) CreateEvent(ctx context.Context, params CreateEventParams) (E
 
 	var result EventResult
 	err = tx.QueryRow(ctx, `
-		INSERT INTO events (idempotency_key, type, payload)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (idempotency_key) DO NOTHING
+		INSERT INTO events (tenant_id, idempotency_key, type, payload)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (tenant_id, idempotency_key) DO NOTHING
 		RETURNING id::text, idempotency_key, type, payload, created_at`,
-		params.IdempotencyKey, params.Type, params.Payload,
+		params.TenantID, params.IdempotencyKey, params.Type, params.Payload,
 	).Scan(
 		&result.Event.ID,
 		&result.Event.IdempotencyKey,
@@ -95,8 +121,8 @@ func (s *Postgres) CreateEvent(ctx context.Context, params CreateEventParams) (E
 		err = tx.QueryRow(ctx, `
 			SELECT id::text, idempotency_key, type, payload, created_at
 			FROM events
-			WHERE idempotency_key = $1`,
-			params.IdempotencyKey,
+			WHERE tenant_id = $1 AND idempotency_key = $2`,
+			params.TenantID, params.IdempotencyKey,
 		).Scan(
 			&result.Event.ID,
 			&result.Event.IdempotencyKey,
@@ -114,8 +140,10 @@ func (s *Postgres) CreateEvent(ctx context.Context, params CreateEventParams) (E
 			INSERT INTO deliveries (event_id, endpoint_id)
 			SELECT $1::uuid, id
 			FROM endpoints
-			WHERE id = ANY($2::uuid[]) AND enabled`,
-			result.Event.ID, params.EndpointIDs,
+			WHERE tenant_id = $2
+			  AND id = ANY($3::uuid[])
+			  AND enabled`,
+			result.Event.ID, params.TenantID, params.EndpointIDs,
 		)
 		if err != nil {
 			return EventResult{}, fmt.Errorf("create event deliveries: %w", err)
@@ -131,13 +159,13 @@ func (s *Postgres) CreateEvent(ctx context.Context, params CreateEventParams) (E
 	return result, nil
 }
 
-func (s *Postgres) GetEvent(ctx context.Context, id string) (domain.Event, error) {
+func (s *Postgres) GetEvent(ctx context.Context, tenantID, id string) (domain.Event, error) {
 	var event domain.Event
 	err := s.pool.QueryRow(ctx, `
 		SELECT id::text, idempotency_key, type, payload, created_at
 		FROM events
-		WHERE id = $1`,
-		id,
+		WHERE tenant_id = $1 AND id = $2`,
+		tenantID, id,
 	).Scan(&event.ID, &event.IdempotencyKey, &event.Type, &event.Payload, &event.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Event{}, ErrNotFound
@@ -150,14 +178,16 @@ func (s *Postgres) GetEvent(ctx context.Context, id string) (domain.Event, error
 
 func (s *Postgres) ListDeliveries(ctx context.Context, filter DeliveryFilter) ([]domain.Delivery, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id::text, event_id::text, endpoint_id::text, status::text,
-		       attempt_count, next_attempt_at, last_status_code, last_error,
-		       created_at, updated_at
-		FROM deliveries
-		WHERE ($1 = '' OR status::text = $1)
-		ORDER BY created_at DESC
-		LIMIT $2`,
-		filter.Status, filter.Limit,
+		SELECT d.id::text, d.event_id::text, d.endpoint_id::text, d.status::text,
+		       d.attempt_count, d.next_attempt_at, d.last_status_code, d.last_error,
+		       d.created_at, d.updated_at
+		FROM deliveries d
+		JOIN events e ON e.id = d.event_id
+		WHERE e.tenant_id = $1
+		  AND ($2 = '' OR d.status::text = $2)
+		ORDER BY d.created_at DESC
+		LIMIT $3`,
+		filter.TenantID, filter.Status, filter.Limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list deliveries: %w", err)
@@ -186,9 +216,9 @@ func (s *Postgres) ListDeliveries(ctx context.Context, filter DeliveryFilter) ([
 	return deliveries, rows.Err()
 }
 
-func (s *Postgres) ReplayDelivery(ctx context.Context, id string) error {
+func (s *Postgres) ReplayDelivery(ctx context.Context, tenantID, id string) error {
 	tag, err := s.pool.Exec(ctx, `
-		UPDATE deliveries
+		UPDATE deliveries d
 		SET status = 'retrying',
 		    attempt_count = 0,
 		    next_attempt_at = now(),
@@ -197,8 +227,12 @@ func (s *Postgres) ReplayDelivery(ctx context.Context, id string) error {
 		    last_status_code = NULL,
 		    last_error = NULL,
 		    updated_at = now()
-		WHERE id = $1 AND status = 'dead'`,
-		id,
+		FROM events e
+		WHERE d.id = $1
+		  AND d.status = 'dead'
+		  AND e.id = d.event_id
+		  AND e.tenant_id = $2`,
+		id, tenantID,
 	)
 	if err != nil {
 		return fmt.Errorf("replay delivery: %w", err)
@@ -207,4 +241,59 @@ func (s *Postgres) ReplayDelivery(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func (s *Postgres) EncryptLegacyEndpointSecrets(ctx context.Context) (int, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id::text, tenant_id::text, secret
+		FROM endpoints
+		WHERE secret IS NOT NULL`)
+	if err != nil {
+		return 0, fmt.Errorf("list legacy endpoint secrets: %w", err)
+	}
+	type legacySecret struct {
+		endpointID string
+		tenantID   string
+		plaintext  string
+	}
+	var legacy []legacySecret
+	for rows.Next() {
+		var item legacySecret
+		if err := rows.Scan(&item.endpointID, &item.tenantID, &item.plaintext); err != nil {
+			rows.Close()
+			return 0, fmt.Errorf("scan legacy endpoint secret: %w", err)
+		}
+		legacy = append(legacy, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, fmt.Errorf("iterate legacy endpoint secrets: %w", err)
+	}
+	rows.Close()
+
+	for _, item := range legacy {
+		ciphertext, nonce, err := s.secretBox.Encrypt(
+			item.plaintext,
+			secretbox.AssociatedData(item.tenantID, item.endpointID),
+		)
+		if err != nil {
+			return 0, err
+		}
+		tag, err := s.pool.Exec(ctx, `
+			UPDATE endpoints
+			SET secret_ciphertext = $2,
+			    secret_nonce = $3,
+			    secret_key_version = 1,
+			    secret = NULL
+			WHERE id = $1 AND secret IS NOT NULL`,
+			item.endpointID, ciphertext, nonce,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("migrate legacy endpoint secret: %w", err)
+		}
+		if tag.RowsAffected() != 1 {
+			continue
+		}
+	}
+	return len(legacy), nil
 }

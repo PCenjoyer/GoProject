@@ -10,7 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/PCenjoyer/GoProject/internal/auth"
 	"github.com/PCenjoyer/GoProject/internal/domain"
+	"github.com/PCenjoyer/GoProject/internal/ssrf"
 	"github.com/PCenjoyer/GoProject/internal/store"
 )
 
@@ -21,22 +23,48 @@ type fakeStore struct {
 func (f *fakeStore) CreateEndpoint(context.Context, store.CreateEndpointParams) (domain.Endpoint, error) {
 	return domain.Endpoint{ID: "endpoint-1", Name: "orders", URL: "https://example.com/hooks", Enabled: true}, nil
 }
-func (f *fakeStore) ListEndpoints(context.Context, int) ([]domain.Endpoint, error) {
+func (f *fakeStore) ListEndpoints(context.Context, string, int) ([]domain.Endpoint, error) {
 	return []domain.Endpoint{}, nil
 }
 func (f *fakeStore) CreateEvent(ctx context.Context, params store.CreateEventParams) (store.EventResult, error) {
 	return f.createEvent(ctx, params)
 }
-func (f *fakeStore) GetEvent(context.Context, string) (domain.Event, error) {
+func (f *fakeStore) GetEvent(context.Context, string, string) (domain.Event, error) {
 	return domain.Event{}, store.ErrNotFound
 }
 func (f *fakeStore) ListDeliveries(context.Context, store.DeliveryFilter) ([]domain.Delivery, error) {
 	return []domain.Delivery{}, nil
 }
-func (f *fakeStore) ReplayDelivery(context.Context, string) error { return nil }
+func (f *fakeStore) ReplayDelivery(context.Context, string, string) error { return nil }
 
 func testAPI(dataStore store.Store) http.Handler {
-	return New(dataStore, slog.New(slog.NewTextHandler(io.Discard, nil))).Routes()
+	return testAPIWithPolicy(dataStore, ssrf.NewPolicy(true))
+}
+
+func testAPIWithPolicy(dataStore store.Store, policy *ssrf.Policy) http.Handler {
+	routes := New(
+		dataStore,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+		policy,
+	).Routes()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := auth.WithPrincipal(r.Context(), auth.Principal{TenantID: "tenant-1"})
+		routes.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func TestCreateEndpointBlocksPrivateNetwork(t *testing.T) {
+	handler := testAPIWithPolicy(&fakeStore{}, ssrf.NewPolicy(false))
+	request := httptest.NewRequest(http.MethodPost, "/v1/endpoints", strings.NewReader(
+		`{"name":"metadata","url":"http://169.254.169.254/latest/meta-data"}`,
+	))
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusUnprocessableEntity)
+	}
 }
 
 func TestCreateEventRequiresIdempotencyKey(t *testing.T) {
@@ -72,6 +100,9 @@ func TestCreateEventReturnsAccepted(t *testing.T) {
 	}
 	if got.IdempotencyKey != "checkout-42" || got.Type != "order.created" {
 		t.Fatalf("unexpected params: %+v", got)
+	}
+	if got.TenantID != "tenant-1" {
+		t.Fatalf("tenant = %q", got.TenantID)
 	}
 	var body map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {

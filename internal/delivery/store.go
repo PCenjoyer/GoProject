@@ -7,6 +7,7 @@ import (
 )
 
 type Task struct {
+	TenantID   string
 	DeliveryID string
 	EventID    string
 	EventType  string

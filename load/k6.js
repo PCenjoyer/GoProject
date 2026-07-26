@@ -19,6 +19,7 @@ export const options = {
 };
 
 const endpointID = __ENV.ENDPOINT_ID;
+const apiKey = __ENV.API_KEY;
 
 export default function () {
   const key = `k6-${__VU}-${__ITER}`;
@@ -32,10 +33,10 @@ export default function () {
     {
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
         "Idempotency-Key": key,
       },
     },
   );
   check(response, { accepted: (r) => r.status === 202 });
 }
-

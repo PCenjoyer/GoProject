@@ -9,17 +9,22 @@ import (
 )
 
 type Config struct {
-	HTTPAddr            string
-	DiagnosticsAddr     string
-	DatabaseURL         string
-	DatabaseMaxConns    int32
-	ShutdownTimeout     time.Duration
-	LogLevel            string
-	WorkerCount         int
-	PollInterval        time.Duration
-	DeliveryTimeout     time.Duration
-	MaxAttempts         int
-	EndpointConcurrency int
+	HTTPAddr              string
+	DiagnosticsAddr       string
+	DatabaseURL           string
+	DatabaseMaxConns      int32
+	ShutdownTimeout       time.Duration
+	LogLevel              string
+	SecretEncryptionKey   string
+	BootstrapAPIKey       string
+	BootstrapTenantSlug   string
+	BootstrapTenantName   string
+	AllowPrivateEndpoints bool
+	WorkerCount           int
+	PollInterval          time.Duration
+	DeliveryTimeout       time.Duration
+	MaxAttempts           int
+	EndpointConcurrency   int
 }
 
 func Load() (Config, error) {
@@ -28,6 +33,10 @@ func Load() (Config, error) {
 		DiagnosticsAddr:     env("HOOKFORGE_DIAGNOSTICS_ADDR", ":9090"),
 		DatabaseURL:         env("HOOKFORGE_DATABASE_URL", "postgres://hookforge:hookforge@localhost:5432/hookforge?sslmode=disable"),
 		LogLevel:            env("HOOKFORGE_LOG_LEVEL", "info"),
+		SecretEncryptionKey: env("HOOKFORGE_SECRET_ENCRYPTION_KEY", ""),
+		BootstrapAPIKey:     env("HOOKFORGE_BOOTSTRAP_API_KEY", ""),
+		BootstrapTenantSlug: env("HOOKFORGE_BOOTSTRAP_TENANT_SLUG", "default"),
+		BootstrapTenantName: env("HOOKFORGE_BOOTSTRAP_TENANT_NAME", "Default tenant"),
 		DatabaseMaxConns:    20,
 		ShutdownTimeout:     15 * time.Second,
 		WorkerCount:         16,
@@ -59,14 +68,32 @@ func Load() (Config, error) {
 	if cfg.EndpointConcurrency, err = intEnv("HOOKFORGE_ENDPOINT_CONCURRENCY", cfg.EndpointConcurrency); err != nil {
 		return Config{}, err
 	}
+	if cfg.AllowPrivateEndpoints, err = boolEnv("HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS", false); err != nil {
+		return Config{}, err
+	}
 
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("HOOKFORGE_DATABASE_URL is required")
+	}
+	if cfg.SecretEncryptionKey == "" {
+		return Config{}, errors.New("HOOKFORGE_SECRET_ENCRYPTION_KEY is required; run `hookforge generate-secrets`")
 	}
 	if cfg.DatabaseMaxConns < 2 || cfg.WorkerCount < 1 || cfg.MaxAttempts < 1 || cfg.EndpointConcurrency < 1 {
 		return Config{}, errors.New("connection, worker, attempt, and concurrency limits must be positive")
 	}
 	return cfg, nil
+}
+
+func boolEnv(key string, fallback bool) (bool, error) {
+	raw, ok := os.LookupEnv(key)
+	if !ok {
+		return fallback, nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%s: %w", key, err)
+	}
+	return value, nil
 }
 
 func env(key, fallback string) string {
