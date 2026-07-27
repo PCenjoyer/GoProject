@@ -13,10 +13,10 @@ const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
 const viewMeta = {
-  overview: ["Control room", "Обзор"],
-  endpoints: ["Destinations", "Endpoint’ы"],
-  deliveries: ["Delivery log", "Доставки"],
-  send: ["Event composer", "Отправить событие"],
+  overview: ["Центр управления", "Обзор"],
+  endpoints: ["Получатели", "Точки назначения"],
+  deliveries: ["Журнал доставки", "Доставки"],
+  send: ["Создание события", "Отправить событие"],
 };
 
 function setBusy(button, busy, text) {
@@ -129,7 +129,7 @@ function logout() {
 
 function hydratePrincipal() {
   const tenant = state.principal?.tenant || {};
-  $("#tenant-name").textContent = tenant.name || "Tenant";
+  $("#tenant-name").textContent = tenant.name || "Организация";
   $("#tenant-slug").textContent = tenant.slug ? `@${tenant.slug}` : shortID(tenant.id);
   $("#tenant-avatar").textContent = (tenant.name || "HF")
     .split(/\s+/)
@@ -220,7 +220,7 @@ function renderOverviewEndpoints() {
   root.classList.remove("loading-block");
   const items = state.endpoints.slice(0, 5);
   if (!items.length) {
-    root.innerHTML = `<div class="empty-state"><span class="empty-icon">◎</span><h3>Нет endpoint’ов</h3><p>Добавьте первый адрес.</p></div>`;
+    root.innerHTML = `<div class="empty-state"><span class="empty-icon">◎</span><h3>Нет точек назначения</h3><p>Добавьте первый адрес.</p></div>`;
     return;
   }
   root.innerHTML = items.map(item => `
@@ -238,7 +238,7 @@ function renderEndpointsTable() {
   empty.hidden = state.endpoints.length > 0;
   table.innerHTML = state.endpoints.map(item => `
     <tr>
-      <td><div class="cell-primary"><strong>${escapeHTML(item.name)}</strong><small>Webhook endpoint</small></div></td>
+      <td><div class="cell-primary"><strong>${escapeHTML(item.name)}</strong><small>Получатель вебхука</small></div></td>
       <td class="url-cell" title="${escapeHTML(item.url)}">${escapeHTML(item.url)}</td>
       <td><span class="status ${item.enabled ? "status-succeeded" : "status-dead"}">${item.enabled ? "Активен" : "Отключён"}</span></td>
       <td>${escapeHTML(formatDate(item.created_at, false))}</td>
@@ -267,7 +267,7 @@ function renderDeliveriesTable() {
 function renderEndpointChecklist() {
   const root = $("#endpoint-checklist");
   if (!state.endpoints.length) {
-    root.innerHTML = `<p class="field-help invalid">Сначала создайте хотя бы один endpoint.</p>`;
+    root.innerHTML = `<p class="field-help invalid">Сначала создайте хотя бы одну точку назначения.</p>`;
     return;
   }
   root.innerHTML = state.endpoints.filter(item => item.enabled).map(item => `
@@ -345,7 +345,7 @@ async function sendEvent(event) {
   event.preventDefault();
   const selected = $$('input[name="endpoint"]:checked').map(input => input.value);
   if (!selected.length) {
-    toast("Выберите хотя бы один endpoint", "error");
+    toast("Выберите хотя бы одну точку назначения", "error");
     return;
   }
   if (!validateJSON()) return;
@@ -419,7 +419,7 @@ function bindEvents() {
   $("#event-form").addEventListener("submit", sendEvent);
   $("#event-payload").addEventListener("input", validateJSON);
   $("#regenerate-key").addEventListener("click", regenerateIdempotencyKey);
-  $("#copy-event-id").addEventListener("click", () => copyText($("#result-event-id").textContent, "Event ID скопирован"));
+  $("#copy-event-id").addEventListener("click", () => copyText($("#result-event-id").textContent, "ID события скопирован"));
   $("#status-filters").addEventListener("click", event => {
     const button = event.target.closest("[data-status]");
     if (!button) return;

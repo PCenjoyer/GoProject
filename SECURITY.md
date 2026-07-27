@@ -1,19 +1,21 @@
-# Security policy
+# Политика безопасности
 
-Please report vulnerabilities privately through GitHub Security Advisories rather
-than a public issue.
+Сообщайте об уязвимостях конфиденциально через GitHub Security Advisories, а не
+через публичную задачу.
 
-Operational deployments should:
+При эксплуатации HookForge необходимо:
 
-- protect API keys and rotate them through controlled tenant provisioning;
-- keep the diagnostics port private;
-- store the AES encryption key in a managed secret service and keep old keys during
-  any planned rotation;
-- retain the built-in SSRF policy and add an infrastructure egress allowlist;
-- terminate TLS at the service mesh or ingress;
-- rotate endpoint signing secrets and database credentials;
-- retain audit logs for endpoint and replay changes.
+- защищать API-ключи и менять их через контролируемое создание организаций;
+- оставлять диагностический порт доступным только во внутренней сети;
+- хранить ключ AES в защищённом хранилище секретов и сохранять старые ключи на
+  время плановой ротации;
+- не отключать встроенную SSRF-защиту и дополнительно ограничивать исходящий
+  трафик на уровне инфраструктуры;
+- завершать TLS на сервисной сетке, обратном прокси или ingress-контроллере;
+- регулярно менять секреты подписи точек назначения и учётные данные базы;
+- сохранять журнал административных изменений точек и ручных повторов.
 
-This repository is a reference implementation and does not claim that its default
-local Compose configuration is production-hardened. The
-`HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS` override is for local testing only.
+Репозиторий служит эталонной реализацией. Локальная конфигурация Compose по
+умолчанию не считается полностью защищённой для промышленной эксплуатации.
+Настройка `HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS` предназначена только для локальной
+разработки.

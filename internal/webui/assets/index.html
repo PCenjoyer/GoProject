@@ -19,27 +19,27 @@
         <span>HookForge</span>
       </a>
       <div class="login-hero">
-        <p class="eyebrow">Reliable webhook infrastructure</p>
+        <p class="eyebrow">Надёжная инфраструктура вебхуков</p>
         <h1>События дошли.<br><em>Вы спокойны.</em></h1>
         <p class="lead">Отправляйте, наблюдайте и повторяйте доставку вебхуков из одной понятной панели.</p>
       </div>
       <div class="signal-card" aria-hidden="true">
         <div class="signal-head">
-          <span>delivery stream</span>
-          <span class="live-pill"><i></i> live</span>
+          <span>поток доставок</span>
+          <span class="live-pill"><i></i> работает</span>
         </div>
         <div class="signal-rows">
           <span class="signal-time">12:41:08</span><b></b><span>order.created</span><strong>200</strong>
           <span class="signal-time">12:41:06</span><b></b><span>invoice.paid</span><strong>200</strong>
-          <span class="signal-time">12:41:02</span><b class="warn"></b><span>customer.updated</span><strong class="retry">retry</strong>
+          <span class="signal-time">12:41:02</span><b class="warn"></b><span>customer.updated</span><strong class="retry">повтор</strong>
         </div>
       </div>
-      <p class="login-foot">At-least-once delivery · Tenant isolation · AES-256-GCM</p>
+      <p class="login-foot">Доставка как минимум один раз · Изоляция организаций · AES-256-GCM</p>
     </section>
 
     <section class="login-panel">
       <form id="login-form" class="login-card">
-        <span class="step-label">01 / CONNECT</span>
+        <span class="step-label">01 / ПОДКЛЮЧЕНИЕ</span>
         <h2>Подключиться</h2>
         <p>Введите API-ключ tenant’а. Он используется только в этой вкладке и не сохраняется.</p>
         <label for="api-key">API-ключ</label>
@@ -64,7 +64,7 @@
       </a>
       <nav class="nav" aria-label="Основная навигация">
         <button class="nav-item active" type="button" data-view="overview"><span class="nav-icon">⌁</span>Обзор</button>
-        <button class="nav-item" type="button" data-view="endpoints"><span class="nav-icon">◎</span>Endpoint’ы</button>
+        <button class="nav-item" type="button" data-view="endpoints"><span class="nav-icon">◎</span>Точки назначения</button>
         <button class="nav-item" type="button" data-view="deliveries"><span class="nav-icon">↗</span>Доставки</button>
         <button class="nav-item" type="button" data-view="send"><span class="nav-icon">＋</span>Отправить событие</button>
       </nav>
@@ -73,7 +73,7 @@
         <button id="logout-button" class="nav-item" type="button"><span class="nav-icon">↪</span>Отключиться</button>
         <div class="tenant-card">
           <span id="tenant-avatar" class="tenant-avatar">HF</span>
-          <span><strong id="tenant-name">Tenant</strong><small id="tenant-slug">—</small></span>
+          <span><strong id="tenant-name">Организация</strong><small id="tenant-slug">—</small></span>
           <i class="connection-dot" title="Подключено"></i>
         </div>
       </div>
@@ -83,7 +83,7 @@
       <header class="topbar">
         <button id="menu-button" class="menu-button" type="button" aria-label="Открыть меню">☰</button>
         <div>
-          <p id="page-kicker" class="eyebrow">Control room</p>
+          <p id="page-kicker" class="eyebrow">Центр управления</p>
           <h1 id="page-title">Обзор</h1>
         </div>
         <div class="topbar-actions">
@@ -97,7 +97,7 @@
         <section id="view-overview" class="view active-view">
           <div class="stats-grid">
             <article class="stat-card accent">
-              <span class="stat-label">Endpoint’ы</span>
+              <span class="stat-label">Точки назначения</span>
               <strong id="stat-endpoints">—</strong>
               <small id="stat-enabled">ожидаем данные</small>
               <span class="stat-glyph">◎</span>
@@ -111,7 +111,7 @@
             <article class="stat-card">
               <span class="stat-label">В очереди</span>
               <strong id="stat-queue">—</strong>
-              <small>pending и retrying</small>
+              <small>ожидают или повторяются</small>
               <span class="stat-glyph">⌛</span>
             </article>
             <article class="stat-card danger">
@@ -132,7 +132,7 @@
             </article>
             <article class="panel endpoint-panel">
               <div class="panel-head">
-                <div><span class="section-number">02</span><h2>Endpoint’ы</h2></div>
+                <div><span class="section-number">02</span><h2>Точки назначения</h2></div>
                 <button class="text-button" type="button" data-view-jump="endpoints">Управление →</button>
               </div>
               <div id="overview-endpoints" class="mini-endpoints loading-block"></div>
@@ -145,7 +145,7 @@
             <div>
               <p>Адреса, на которые HookForge доставляет ваши события.</p>
             </div>
-            <button id="new-endpoint-button" class="button button-primary" type="button">＋ Новый endpoint</button>
+            <button id="new-endpoint-button" class="button button-primary" type="button">＋ Новая точка</button>
           </div>
           <article class="panel table-panel">
             <div class="table-wrap">
@@ -155,9 +155,9 @@
               </table>
             </div>
             <div id="endpoints-empty" class="empty-state" hidden>
-              <span class="empty-icon">◎</span><h3>Endpoint’ов пока нет</h3>
+              <span class="empty-icon">◎</span><h3>Точек назначения пока нет</h3>
               <p>Добавьте первый адрес, чтобы начать доставлять события.</p>
-              <button class="button button-primary" type="button" data-open-endpoint>Создать endpoint</button>
+              <button class="button button-primary" type="button" data-open-endpoint>Создать точку</button>
             </div>
           </article>
         </section>
@@ -175,7 +175,7 @@
           <article class="panel table-panel">
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Состояние</th><th>Event ID</th><th>Endpoint ID</th><th>Попытки</th><th>HTTP</th><th>Обновлено</th><th></th></tr></thead>
+                <thead><tr><th>Состояние</th><th>ID события</th><th>ID точки</th><th>Попытки</th><th>HTTP</th><th>Обновлено</th><th></th></tr></thead>
                 <tbody id="deliveries-table"></tbody>
               </table>
             </div>
@@ -199,7 +199,7 @@
                   <input id="event-type" name="type" placeholder="order.created" maxlength="120" required>
                 </div>
                 <div class="field">
-                  <label for="idempotency-key">Idempotency key</label>
+                  <label for="idempotency-key">Ключ идемпотентности</label>
                   <div class="input-action">
                     <input id="idempotency-key" name="idempotency-key" required>
                     <button id="regenerate-key" type="button" aria-label="Создать новый ключ">↻</button>
@@ -211,7 +211,7 @@
                 <div id="endpoint-checklist" class="endpoint-checklist"></div>
               </fieldset>
               <div class="field">
-                <label for="event-payload">Payload</label>
+                <label for="event-payload">Данные события</label>
                 <textarea id="event-payload" name="payload" rows="12" spellcheck="false" required>{
   "order_id": "ord_42",
   "amount": 1290,
@@ -224,22 +224,22 @@
 
             <aside class="compose-aside">
               <article class="info-card dark-card">
-                <span class="step-label">HOW IT WORKS</span>
+                <span class="step-label">КАК ЭТО РАБОТАЕТ</span>
                 <h3>Один запрос.<br>Надёжная доставка.</h3>
                 <ol>
                   <li><span>1</span>Событие сохраняется в PostgreSQL</li>
-                  <li><span>2</span>Создаётся доставка для каждого endpoint’а</li>
-                  <li><span>3</span>Неудачные попытки повторяются автоматически</li>
+                  <li><span>2</span>Создаётся доставка для каждой точки назначения</li>
+                  <li><span>3</span>Неудачные отправки повторяются автоматически</li>
                 </ol>
               </article>
               <article id="event-result" class="info-card result-card" hidden>
-                <span class="step-label">ACCEPTED</span>
+                <span class="step-label">ПРИНЯТО</span>
                 <h3>Событие принято</h3>
                 <dl>
-                  <div><dt>Event ID</dt><dd id="result-event-id">—</dd></div>
+                  <div><dt>ID события</dt><dd id="result-event-id">—</dd></div>
                   <div><dt>Статус</dt><dd id="result-duplicate">—</dd></div>
                 </dl>
-                <button id="copy-event-id" class="button button-secondary button-wide" type="button">Копировать Event ID</button>
+                <button id="copy-event-id" class="button button-secondary button-wide" type="button">Копировать ID события</button>
               </article>
             </aside>
           </div>
@@ -251,22 +251,22 @@
   <dialog id="endpoint-dialog">
     <form id="endpoint-form" class="dialog-card">
       <div class="dialog-head">
-        <div><span class="step-label">NEW DESTINATION</span><h2>Новый endpoint</h2></div>
+        <div><span class="step-label">НОВЫЙ ПОЛУЧАТЕЛЬ</span><h2>Новая точка назначения</h2></div>
         <button class="dialog-close" type="button" data-close-dialog aria-label="Закрыть">×</button>
       </div>
-      <p>Укажите публичный HTTPS-адрес получателя. Для локальной разработки нужно разрешить private endpoints в конфигурации.</p>
+      <p>Укажите публичный HTTPS-адрес получателя. Для локальной разработки нужно разрешить частные адреса в конфигурации.</p>
       <div class="field">
         <label for="endpoint-name">Название</label>
         <input id="endpoint-name" name="name" placeholder="Платёжный сервис" maxlength="120" required>
       </div>
       <div class="field">
-        <label for="endpoint-url">Webhook URL</label>
+        <label for="endpoint-url">URL вебхука</label>
         <input id="endpoint-url" name="url" type="url" placeholder="https://example.com/webhooks" required>
       </div>
       <div id="endpoint-error" class="form-error" role="alert"></div>
       <div class="dialog-actions">
         <button class="button button-secondary" type="button" data-close-dialog>Отмена</button>
-        <button id="create-endpoint-button" class="button button-primary" type="submit">Создать endpoint</button>
+        <button id="create-endpoint-button" class="button button-primary" type="submit">Создать точку</button>
       </div>
     </form>
   </dialog>
@@ -274,11 +274,11 @@
   <dialog id="secret-dialog">
     <div class="dialog-card secret-card">
       <div class="secret-badge">✓</div>
-      <span class="step-label">ENDPOINT CREATED</span>
-      <h2>Сохраните signing secret</h2>
+      <span class="step-label">ТОЧКА СОЗДАНА</span>
+      <h2>Сохраните секрет подписи</h2>
       <p>Он нужен получателю для проверки подписи. HookForge больше не покажет его в открытом виде.</p>
       <div class="revealed-secret"><code id="created-secret"></code><button id="copy-secret" type="button">Копировать</button></div>
-      <button class="button button-primary button-wide" type="button" data-close-secret>Я сохранил secret</button>
+      <button class="button button-primary button-wide" type="button" data-close-secret>Я сохранил секрет</button>
     </div>
   </dialog>
 </body>

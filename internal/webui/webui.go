@@ -12,7 +12,7 @@ import (
 //go:embed assets/*
 var assets embed.FS
 
-// Handler serves the dependency-free HookForge operator console.
+// Handler обслуживает панель HookForge без внешних зависимостей.
 func Handler() http.Handler {
 	public, err := fs.Sub(assets, "assets")
 	if err != nil {

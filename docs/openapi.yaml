@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   title: HookForge API
   version: 1.2.0
-  description: Authenticated, tenant-isolated, at-least-once webhook delivery.
+  description: Защищённая доставка вебхуков с изоляцией организаций и семантикой «как минимум один раз».
 servers:
   - url: http://localhost:8080
 security:
@@ -11,20 +11,20 @@ paths:
   /:
     get:
       security: []
-      summary: Service information
+      summary: Панель управления HookForge
       responses:
         "200":
-          description: Embedded HookForge operator console
+          description: Встроенная графическая панель HookForge
           content:
             text/html:
               schema:
                 type: string
   /v1/me:
     get:
-      summary: Get the authenticated tenant
+      summary: Получить текущую организацию
       responses:
         "200":
-          description: Tenant and API-key identity selected by the Bearer key
+          description: Организация и API-ключ, определённые по Bearer-ключу
           content:
             application/json:
               schema:
@@ -34,22 +34,22 @@ paths:
   /healthz:
     get:
       security: []
-      summary: Process liveness
+      summary: Проверить состояние процесса
       responses:
         "200":
-          description: Process is alive
+          description: Процесс работает
   /readyz:
     get:
       security: []
-      summary: Database readiness
+      summary: Проверить готовность базы данных
       responses:
         "200":
-          description: Service is ready
+          description: Сервис готов к работе
         "503":
-          description: Database is unavailable
+          description: База данных недоступна
   /v1/endpoints:
     post:
-      summary: Create a webhook endpoint
+      summary: Создать точку назначения вебхука
       requestBody:
         required: true
         content:
@@ -58,7 +58,7 @@ paths:
               $ref: "#/components/schemas/CreateEndpoint"
       responses:
         "201":
-          description: Endpoint created; the signing secret is returned once
+          description: Точка создана; секрет подписи возвращается только один раз
           content:
             application/json:
               schema:
@@ -74,14 +74,14 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
     get:
-      summary: List endpoints
+      summary: Получить список точек назначения
       parameters:
         - $ref: "#/components/parameters/Limit"
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "200":
-          description: Endpoint list
+          description: Список точек назначения
           content:
             application/json:
               schema:
@@ -94,7 +94,7 @@ paths:
                       $ref: "#/components/schemas/Endpoint"
   /v1/events:
     post:
-      summary: Ingest and fan out an event
+      summary: Принять событие и создать доставки
       parameters:
         - name: Idempotency-Key
           in: header
@@ -113,13 +113,13 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "202":
-          description: New event durably accepted
+          description: Новое событие надёжно принято
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/EventResult"
         "200":
-          description: Existing event returned for a duplicate key
+          description: Для повторного ключа возвращено существующее событие
           content:
             application/json:
               schema:
@@ -128,14 +128,14 @@ paths:
           $ref: "#/components/responses/ValidationError"
   /v1/events/{id}:
     get:
-      summary: Get an event
+      summary: Получить событие
       parameters:
         - $ref: "#/components/parameters/ID"
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "200":
-          description: Event
+          description: Событие
           content:
             application/json:
               schema:
@@ -144,7 +144,7 @@ paths:
           $ref: "#/components/responses/NotFound"
   /v1/deliveries:
     get:
-      summary: List deliveries
+      summary: Получить список доставок
       parameters:
         - $ref: "#/components/parameters/Limit"
         - name: status
@@ -155,7 +155,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "200":
-          description: Delivery list
+          description: Список доставок
           content:
             application/json:
               schema:
@@ -168,14 +168,14 @@ paths:
                       $ref: "#/components/schemas/Delivery"
   /v1/deliveries/{id}/replay:
     post:
-      summary: Replay a dead-letter delivery
+      summary: Повторить доставку из DLQ
       parameters:
         - $ref: "#/components/parameters/ID"
       responses:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "204":
-          description: Delivery scheduled for replay
+          description: Доставка поставлена на повтор
         "404":
           $ref: "#/components/responses/NotFound"
 components:
@@ -184,7 +184,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: HookForge API key
-      description: The key determines the tenant; clients never submit tenant IDs.
+      description: Ключ определяет организацию; клиент никогда не передаёт её ID.
   parameters:
     ID:
       name: id
@@ -203,7 +203,7 @@ components:
         default: 50
   responses:
     Unauthorized:
-      description: Missing or invalid tenant API key
+      description: API-ключ отсутствует или недействителен
       headers:
         WWW-Authenticate:
           schema:
@@ -213,13 +213,13 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     ValidationError:
-      description: Input validation failed
+      description: Входные данные не прошли проверку
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
     NotFound:
-      description: Resource not found
+      description: Ресурс не найден
       content:
         application/json:
           schema:
@@ -259,7 +259,7 @@ components:
         url:
           type: string
           format: uri
-          description: Must resolve exclusively to public network addresses.
+          description: Адрес должен разрешаться только в публичные сетевые адреса.
     Endpoint:
       type: object
       required: [id, name, url, enabled, created_at, updated_at]

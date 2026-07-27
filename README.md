@@ -1,44 +1,48 @@
 # HookForge
 
-HookForge is a reliable webhook delivery service written in Go. Producers submit an
-event once; HookForge persists it before acknowledging the request and delivers it
-to one or more HTTP endpoints with **at-least-once** semantics.
+HookForge — сервис надёжной доставки вебхуков на Go. Отправитель передаёт событие
+один раз, HookForge сохраняет его до подтверждения запроса и доставляет одному или
+нескольким HTTP-получателям с семантикой **как минимум один раз**.
 
-New to webhooks, APIs, or Go? Start with the
-[beginner-friendly Russian guide](docs/beginner-guide.ru.md).
+Если вы раньше не работали с вебхуками, API или Go, начните с
+[подробного руководства для начинающих](docs/beginner-guide.ru.md).
 
-The project is intentionally honest about distributed-systems guarantees:
-receivers can observe a duplicate when a process dies after the receiver accepts a
-request but before HookForge commits success. Every delivery therefore includes a
-stable event ID and an HMAC signature so consumers can verify and deduplicate it.
+Проект честно учитывает ограничения распределённых систем: получатель может
+увидеть дубликат, если процесс остановился после успешного ответа получателя, но
+до фиксации результата в HookForge. Поэтому каждая доставка содержит постоянный
+ID события и HMAC-подпись, позволяющие проверить запрос и исключить повторную
+обработку.
 
-Every API request is authenticated with a high-entropy Bearer key. The key selects
-a tenant, and all endpoint, event, delivery, and replay queries are scoped to that
-tenant. Endpoint signing secrets are encrypted at rest with AES-256-GCM.
+Каждый запрос API проходит аутентификацию по Bearer API-ключу. Ключ определяет
+организацию, а все запросы к точкам назначения, событиям, доставкам и повторам
+ограничиваются данными этой организации. Секреты подписи хранятся в зашифрованном
+виде с использованием AES-256-GCM.
 
-## Current capabilities
+## Возможности
 
-- PostgreSQL-backed durable event and delivery model
-- transactional schema migrations embedded in the binary
-- idempotent event ingestion with transactional endpoint fan-out
-- endpoint and delivery query APIs with bounded pagination
-- bounded delivery workers with per-endpoint noisy-neighbour isolation
-- signed webhooks, full-jitter retries, stale-lease recovery, and a DLQ
-- Prometheus metrics, pprof diagnostics, and a provisioned Grafana dashboard
-- embedded operator console for endpoints, events, delivery status, and DLQ replay
-- Bearer API-key authentication and tenant isolation
-- DNS-rebinding-resistant SSRF protection
-- AES-256-GCM encryption for endpoint signing secrets
-- liveness and database readiness probes
-- graceful HTTP shutdown
-- container image and local Compose environment
+- надёжное хранение событий и доставок в PostgreSQL;
+- транзакционные миграции схемы, встроенные в исполняемый файл;
+- идемпотентный приём событий и транзакционное создание доставок;
+- API со списками точек назначения и доставок и ограниченной пагинацией;
+- ограниченный пул обработчиков и защита от перегрузки одним получателем;
+- подписанные вебхуки, повторы с полной случайной задержкой и восстановление
+  просроченных блокировок;
+- очередь недоставленных сообщений (DLQ) и ручной повтор;
+- метрики Prometheus, диагностика pprof и готовая панель Grafana;
+- встроенная графическая панель для точек назначения, событий и доставок;
+- Bearer-аутентификация и изоляция организаций;
+- SSRF-защита, устойчивая к подмене DNS;
+- шифрование секретов подписи с помощью AES-256-GCM;
+- проверки работоспособности процесса и доступности базы данных;
+- корректная остановка HTTP-сервера;
+- контейнерный образ и локальное окружение Docker Compose.
 
-The implementation is organized as separate API, persistence, delivery, and
-observability packages so each reliability boundary is testable in isolation.
+Код разделён на пакеты API, хранения, доставки и наблюдаемости, поэтому каждую
+границу надёжности можно проверять отдельно.
 
-## Quick start
+## Быстрый запуск
 
-Requirements: Go 1.26.5+ and PostgreSQL 17+ (or Docker).
+Требования: Go 1.26.5+ и PostgreSQL 17+ либо Docker.
 
 ```bash
 go run ./cmd/hookforge generate-secrets > .env
@@ -46,25 +50,26 @@ docker compose up --build
 curl http://localhost:8080/readyz
 ```
 
-On Windows PowerShell, preserve the plain-text environment-file encoding:
+В Windows PowerShell сохраните `.env` в обычной однобайтовой кодировке:
 
 ```powershell
 go run ./cmd/hookforge generate-secrets | Out-File -Encoding ascii .env
 docker compose up --build
 ```
 
-Keep `.env` private and backed up securely. Changing
-`HOOKFORGE_SECRET_ENCRYPTION_KEY` makes existing endpoint secrets unreadable.
+Храните `.env` в секрете и создайте безопасную резервную копию. Если изменить
+`HOOKFORGE_SECRET_ENCRYPTION_KEY`, существующие секреты точек назначения
+невозможно будет расшифровать.
 
-Open `http://localhost:8080/` and sign in with the value of
-`HOOKFORGE_BOOTSTRAP_API_KEY` from `.env`. The console keeps the key only in the
-current browser tab and provides endpoint creation, event submission, delivery
-filters, status counters, and dead-letter replay. No separate frontend process or
-Node.js installation is required.
+Откройте `http://localhost:8080/` и вставьте значение
+`HOOKFORGE_BOOTSTRAP_API_KEY` из `.env`. Графическая панель хранит ключ только в
+памяти текущей вкладки и позволяет создавать точки назначения, отправлять события,
+фильтровать доставки, следить за состояниями и повторять сообщения из DLQ.
+Отдельный интерфейсный процесс и Node.js не требуются.
 
-## API walkthrough
+## Примеры работы с API
 
-Create an endpoint. Its signing secret is returned once:
+Создайте точку назначения. Секрет подписи возвращается только один раз:
 
 ```bash
 curl -sS http://localhost:8080/v1/endpoints \
@@ -73,7 +78,7 @@ curl -sS http://localhost:8080/v1/endpoints \
   -d '{"name":"orders","url":"https://example.com/webhooks"}'
 ```
 
-Submit an event using the returned endpoint ID:
+Отправьте событие, указав ID созданной точки:
 
 ```bash
 curl -sS http://localhost:8080/v1/events \
@@ -83,10 +88,10 @@ curl -sS http://localhost:8080/v1/events \
   -d '{"type":"order.created","payload":{"order_id":"42"},"endpoint_ids":["ENDPOINT_ID"]}'
 ```
 
-The first request returns `202 Accepted`; a repeat with the same idempotency key
-returns the original event with `200 OK` and `"duplicate": true`.
+Первый запрос возвращает `202 Accepted`. Повтор с тем же ключом идемпотентности
+возвращает исходное событие с кодом `200 OK` и признаком `"duplicate": true`.
 
-Inspect the DLQ and replay a corrected delivery:
+Посмотрите DLQ и повторите исправленную доставку:
 
 ```bash
 curl -sS 'http://localhost:8080/v1/deliveries?status=dead' \
@@ -95,45 +100,46 @@ curl -i -X POST http://localhost:8080/v1/deliveries/DELIVERY_ID/replay \
   -H "Authorization: Bearer $HOOKFORGE_BOOTSTRAP_API_KEY"
 ```
 
-Receivers verify `X-HookForge-Signature`, whose value is
-`v1=HMAC_SHA256(secret, timestamp + "." + raw_request_body)`, and deduplicate on
-`X-HookForge-Event-ID`.
+Получатель проверяет заголовок `X-HookForge-Signature`. Его значение вычисляется
+как `v1=HMAC_SHA256(secret, timestamp + "." + raw_request_body)`. Дубликаты
+исключаются по `X-HookForge-Event-ID`.
 
-To provision another isolated tenant and receive its initial API key:
+Чтобы создать ещё одну изолированную организацию и получить её первый API-ключ:
 
 ```bash
 docker compose run --rm hookforge provision-tenant \
-  --slug acme --name "Acme Corporation"
+  --slug acme --name "Компания Acme"
 ```
 
-Private, loopback, link-local, metadata, and other non-public endpoint addresses
-are blocked by default at both registration and connection time. Local webhook
-testing can explicitly set `HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS=true`; never enable
-that override in production.
+По умолчанию запрещены частные, локальные, link-local, служебные и другие
+непубличные адреса получателей. Для локальной проверки вебхука можно явно задать
+`HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS=true`. Никогда не включайте эту настройку в
+рабочем окружении.
 
-Operational dashboards are available at `http://localhost:3000` after Compose
-starts. See [docs/runbook.md](docs/runbook.md) for alerting and incident procedures.
-The complete HTTP contract is in [docs/openapi.yaml](docs/openapi.yaml).
+После запуска Compose эксплуатационные графики доступны по адресу
+`http://localhost:3000`. Порядок реагирования на сбои описан в
+[эксплуатационном руководстве](docs/runbook.md), а полный контракт HTTP API — в
+[спецификации OpenAPI](docs/openapi.yaml).
 
-## Engineering guarantees
+## Инженерные гарантии
 
-| Concern | Design |
+| Область | Решение |
 | --- | --- |
-| Durability | Event and fan-out deliveries are committed atomically |
-| Delivery | At least once; no false exactly-once claim |
-| Claiming | PostgreSQL row locks with `SKIP LOCKED` |
-| Retries | Exponential backoff with full jitter and a bounded attempt count |
-| Poison events | Explicit dead-letter state with manual replay |
-| Backpressure | Fixed global worker pool and per-endpoint concurrency limits |
-| Shutdown | Stop claiming, drain in-flight work, then close dependencies |
-| Tenant isolation | Tenant identity comes only from an authenticated API key |
-| Secret storage | AES-256-GCM with random nonces and tenant/endpoint-bound AAD |
-| SSRF | URL validation plus DNS-aware filtering on every outbound connection |
+| Сохранность | Событие и все связанные доставки фиксируются атомарно |
+| Доставка | Как минимум один раз, без ложного обещания exactly-once |
+| Получение задач | Блокировка строк PostgreSQL с `SKIP LOCKED` |
+| Повторы | Экспоненциальная задержка с полной случайностью и пределом попыток |
+| Недоставленные события | Явное состояние DLQ и ручной повтор |
+| Обратное давление | Общий пул обработчиков и предел параллелизма для получателя |
+| Остановка | Прекращение новых задач, ожидание активных запросов, закрытие ресурсов |
+| Изоляция организаций | Организация определяется только проверенным API-ключом |
+| Хранение секретов | AES-256-GCM со случайным nonce и привязкой к организации и точке |
+| SSRF | Проверка URL и DNS при создании точки и каждом исходящем соединении |
 
-See [docs/architecture.md](docs/architecture.md) for the system design and failure
-model.
+Подробное устройство и модель отказов описаны в
+[документе об архитектуре](docs/architecture.md).
 
-## Development
+## Разработка
 
 ```bash
 make test
@@ -141,6 +147,6 @@ make test-race
 make lint
 ```
 
-## License
+## Лицензия
 
 MIT

@@ -1,82 +1,87 @@
-# Architecture
+# Архитектура
 
-## Delivery lifecycle
+## Жизненный цикл доставки
 
 ```mermaid
 flowchart LR
-    U[Operator console] -->|same-origin API| A[HTTP API]
-    P[Producer] -->|POST event| A
-    K[Bearer API key] --> A
-    A -->|single transaction| DB[(PostgreSQL)]
-    DB --> Q[Claim loop]
-    Q --> W[Bounded workers]
-    W --> R[Receiver]
-    W -->|success / retry / dead| DB
+    U["Панель управления"] -->|"API того же источника"| A["HTTP API"]
+    P["Отправитель"] -->|"POST события"| A
+    K["Bearer API-ключ"] --> A
+    A -->|"Одна транзакция"| DB[("PostgreSQL")]
+    DB --> Q["Получение задач"]
+    Q --> W["Ограниченный пул обработчиков"]
+    W --> R["Получатель"]
+    W -->|"Успех / повтор / DLQ"| DB
 ```
 
-1. The API inserts the immutable event and one delivery per selected endpoint in a
-   single transaction.
-2. Workers atomically claim ready deliveries with
+1. API сохраняет неизменяемое событие и по одной доставке для каждой выбранной
+   точки назначения в единой транзакции.
+2. Обработчики атомарно получают готовые доставки с помощью
    `SELECT ... FOR UPDATE SKIP LOCKED`.
-3. The receiver gets the stable event ID, timestamp, attempt number, and an
-   HMAC-SHA256 signature.
-4. A `2xx` response marks the delivery successful. Retryable outcomes are
-   rescheduled with exponential backoff and full jitter. Permanent failures or an
-   exhausted retry budget enter the DLQ.
+3. Получатель получает постоянный ID события, время отправки, номер попытки и
+   подпись HMAC-SHA256.
+4. Ответ `2xx` завершает доставку успешно. Временные ошибки переносят следующую
+   попытку с экспоненциальной и полностью случайной задержкой. Постоянная ошибка
+   или исчерпание числа попыток переводит доставку в DLQ.
 
-Manual replay resets the delivery retry budget but preserves every historical
-attempt, so an operator can compare the original failure with the replay.
+Ручной повтор обнуляет лимит попыток доставки, но сохраняет историю всех прошлых
+попыток. Оператор может сравнить первоначальную ошибку с результатом повтора.
 
-## Authentication and tenant boundary
+## Аутентификация и граница организации
 
-API keys contain a random public prefix and a 256-bit secret. PostgreSQL stores
-only a SHA-256 digest of the complete key. The prefix selects one candidate record;
-the application verifies the digest with a constant-time comparison.
+API-ключ содержит случайный открытый префикс и 256-битный секрет. PostgreSQL
+хранит только SHA-256-хеш полного ключа. Префикс выбирает одну запись-кандидата,
+после чего приложение сравнивает хеши за постоянное время.
 
-The authenticated key places a server-created tenant principal in the request
-context. Clients cannot supply or override a tenant ID. Every endpoint, event,
-delivery, and replay query includes that trusted `tenant_id`, and idempotency keys
-are unique inside a tenant rather than globally.
+Проверенный ключ помещает созданные сервером данные организации в контекст
+запроса. Клиент не может передать или подменить ID организации. Каждый запрос к
+точкам назначения, событиям, доставкам и ручным повторам содержит доверенный
+`tenant_id`. Ключи идемпотентности уникальны внутри организации, а не глобально.
 
-Additional tenants are provisioned through an offline CLI command, which returns
-the initial API key once.
+Дополнительные организации создаются автономной командой CLI, которая показывает
+первый API-ключ только один раз.
 
-The operator console is a dependency-free set of embedded static assets served by
-the same Go binary. It uses the same authenticated `/v1` API as every other
-client, keeps the API key only in the current tab's memory, and never accepts a
-client-supplied tenant ID. A restrictive Content Security Policy permits scripts,
-styles, images, and API connections only from the same origin.
+Панель управления состоит из статических файлов без внешних зависимостей,
+встроенных в тот же исполняемый файл Go. Она использует защищённый API `/v1`,
+хранит API-ключ только в памяти текущей вкладки и не принимает `tenant_id` от
+пользователя. Строгая Content Security Policy разрешает скрипты, стили,
+изображения и API-запросы только с того же источника.
 
-## Failure model
+## Модель отказов
 
-The ambiguous interval is deliberately visible: a receiver can commit the request
-and the worker can crash before recording success. On recovery, the lease expires
-and another worker retries the same delivery. The receiver must use the event ID as
-an idempotency key.
+В системе намеренно учитывается неоднозначный промежуток: получатель может
+зафиксировать запрос, после чего обработчик остановится до записи успешного
+результата. После восстановления срок блокировки истечёт, и другой обработчик
+повторит доставку. Получатель обязан использовать ID события как ключ
+идемпотентности.
 
-Database state is the source of truth. In-memory queues are only bounded scheduling
-buffers and can be discarded during shutdown or process failure.
+Единственный источник истины — состояние базы данных. Очереди в памяти служат
+только ограниченными буферами планирования и могут быть отброшены при остановке
+или сбое процесса.
 
-## Concurrency and noisy-neighbour isolation
+## Параллелизм и защита от шумного соседа
 
-The worker count caps total outbound pressure. A second semaphore is keyed by
-endpoint, preventing one slow receiver from occupying the entire global pool.
-Claims use short leases so abandoned work is recoverable.
+Число обработчиков ограничивает общую исходящую нагрузку. Дополнительный семафор
+для каждой точки не позволяет одному медленному получателю занять весь общий пул.
+Задачи получают короткую аренду, поэтому брошенная работа восстанавливается.
 
-## Security boundaries
+## Границы безопасности
 
-- All `/v1` routes require a Bearer API key.
-- Endpoint URLs are restricted to HTTP(S) and resolved at creation time.
-- A custom dialer resolves and filters DNS again for every outbound connection,
-  blocking loopback, private, link-local, metadata, multicast, and reserved ranges.
-- Webhook redirects and environment-configured outbound proxies are disabled.
-- Secrets are never returned by read APIs or logged.
-- Endpoint signing secrets are encrypted with AES-256-GCM. Tenant and endpoint IDs
-  are authenticated as associated data, preventing ciphertext relocation.
-- Payload authenticity uses HMAC-SHA256 over the timestamp and exact body.
-- Response bodies are bounded before capture.
-- Server and delivery timeouts are explicit.
+- Все маршруты `/v1` требуют Bearer API-ключ.
+- URL точек назначения ограничены протоколами HTTP(S) и проверяются через DNS
+  при создании.
+- Специальный механизм соединения повторно проверяет DNS перед каждым исходящим
+  подключением и запрещает локальные, частные, link-local, служебные,
+  многоадресные и зарезервированные диапазоны.
+- Перенаправления вебхуков и исходящие прокси из переменных окружения отключены.
+- Секреты не возвращаются API чтения и не записываются в журналы.
+- Секреты подписи шифруются AES-256-GCM. ID организации и точки назначения
+  используются как дополнительные аутентифицированные данные, поэтому шифротекст
+  нельзя незаметно перенести к другой точке.
+- Подлинность данных проверяется HMAC-SHA256 по времени отправки и точному телу.
+- Размер сохраняемого ответа получателя ограничен.
+- Сервер и операции доставки имеют явные ограничения времени.
 
-Production deployments should additionally enforce an infrastructure egress
-allowlist, keep diagnostics on a private network, and store encryption keys in a
-managed secret service.
+В рабочем окружении необходимо также ограничить исходящий трафик на уровне
+инфраструктуры, оставить диагностику во внутренней сети и хранить ключи шифрования
+в специализированном хранилище секретов.

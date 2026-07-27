@@ -1,84 +1,87 @@
-# Operations runbook
+# Эксплуатационное руководство
 
-## Health and diagnostics
+## Проверка состояния и диагностика
 
-- `GET :8080/healthz` verifies the process is alive.
-- `GET :8080/readyz` verifies PostgreSQL is reachable.
-- `GET :9090/metrics` exposes Prometheus metrics.
-- `GET :9090/debug/pprof/` exposes Go profiles. Keep the diagnostics listener on
-  a private network in production.
+- `GET :8080/healthz` проверяет, что процесс работает.
+- `GET :8080/readyz` проверяет доступность PostgreSQL.
+- `GET :9090/metrics` предоставляет метрики Prometheus.
+- `GET :9090/debug/pprof/` предоставляет профили Go. В рабочем окружении
+  диагностический порт должен быть доступен только во внутренней сети.
 
-The default Compose environment serves Prometheus on
-`http://localhost:9091` and Grafana on `http://localhost:3000`.
+В стандартном окружении Compose Prometheus доступен по адресу
+`http://localhost:9091`, а Grafana — по адресу `http://localhost:3000`.
 
-## Initial secrets and authentication
+## Первоначальные секреты и аутентификация
 
-Generate a fresh local environment before the first Compose start:
+Перед первым запуском Compose создайте уникальное локальное окружение:
 
 ```bash
 go run ./cmd/hookforge generate-secrets > .env
 docker compose up --build
 ```
 
-The generated file contains the bootstrap API key, AES-256-GCM key, PostgreSQL
-password, and Grafana password. It is excluded from Git. Back it up in a secret
-manager; losing or changing the AES key makes stored endpoint signing secrets
-unreadable.
+Созданный файл содержит начальный API-ключ, ключ AES-256-GCM, пароль PostgreSQL и
+пароль Grafana. Файл исключён из Git. Сохраните его резервную копию в защищённом
+хранилище: потеря или замена ключа AES сделает сохранённые секреты подписи
+нечитаемыми.
 
-All `/v1` requests require:
+Все запросы к `/v1` требуют заголовок:
 
 ```text
-Authorization: Bearer <tenant API key>
+Authorization: Bearer <API-ключ организации>
 ```
 
-Provision an additional isolated tenant:
+Создание дополнительной изолированной организации:
 
 ```bash
 docker compose run --rm hookforge provision-tenant \
-  --slug acme --name "Acme Corporation"
+  --slug acme --name "Компания Acme"
 ```
 
-The command prints the tenant API key once. Store it immediately.
+Команда показывает API-ключ организации только один раз. Сразу сохраните его в
+защищённом месте.
 
-## Alerts
+## Оповещения
 
-Recommended starting alerts:
+Рекомендуемые начальные условия оповещений:
 
-- dead-letter rate is non-zero for 10 minutes;
-- p95 delivery duration exceeds the configured timeout budget;
-- claim errors continue for 2 minutes;
-- endpoint saturation grows continuously;
-- readiness fails for more than 30 seconds.
+- число попаданий в DLQ больше нуля в течение 10 минут;
+- p95 длительности доставки превышает настроенный предел;
+- ошибки получения задач продолжаются более 2 минут;
+- постоянно растёт насыщение отдельной точки назначения;
+- проверка готовности не проходит более 30 секунд.
 
-Tune thresholds against real traffic before paging.
+Настройте пороги по реальной нагрузке до включения срочных уведомлений.
 
-## DLQ triage
+## Разбор сообщений в DLQ
 
-1. Query `GET /v1/deliveries?status=dead`.
-2. Inspect `last_status_code` and `last_error`.
-3. Confirm the endpoint is healthy and the payload contract is still valid.
-4. Replay only after correcting the receiver or endpoint configuration.
-5. Watch `hookforge_delivery_attempts_total{outcome="dead"}` and the delivery
-   record after replay.
+1. Запросите `GET /v1/deliveries?status=dead`.
+2. Проверьте `last_status_code` и `last_error`.
+3. Убедитесь, что получатель работает, а формат данных не изменился.
+4. Запускайте повтор только после исправления получателя или его настроек.
+5. После повтора следите за
+   `hookforge_delivery_attempts_total{outcome="dead"}` и записью доставки.
 
-Replay is at-least-once. The receiver must deduplicate the stable event ID.
+Повтор сохраняет семантику «как минимум один раз». Получатель обязан исключать
+дубликаты по постоянному ID события.
 
-## Safe shutdown
+## Безопасная остановка
 
-SIGTERM stops new HTTP work and new claims. In-flight webhook calls can finish
-within the shutdown budget; unfinished claims become eligible after their lease
-expires. Set the orchestrator termination grace period above
+Сигнал SIGTERM прекращает приём новых HTTP-запросов и получение новых задач.
+Активные отправки вебхуков могут завершиться в пределах времени остановки.
+Незавершённые задачи снова становятся доступными после истечения блокировки.
+Период завершения процесса в оркестраторе должен быть больше
 `HOOKFORGE_SHUTDOWN_TIMEOUT`.
 
-## Database backup
+## Резервное копирование базы данных
 
-Back up the PostgreSQL database with a tool appropriate for the deployment.
-`events`, `deliveries`, and `delivery_attempts` must be restored together. Schema
-migrations are forward-only and embedded in the application image.
+Создавайте резервную копию PostgreSQL подходящим для окружения инструментом.
+Таблицы `events`, `deliveries` и `delivery_attempts` необходимо восстанавливать
+вместе. Миграции схемы применяются только вперёд и встроены в образ приложения.
 
-## SSRF policy
+## Политика SSRF
 
-HookForge blocks non-public endpoint networks both when an endpoint is created and
-when a worker opens each connection. Redirects are not followed. Treat
-`HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS=true` as an unsafe local-development override;
-never use it in production.
+HookForge запрещает непубличные сети при создании точки назначения и при каждом
+исходящем соединении обработчика. Перенаправления не выполняются. Считайте
+`HOOKFORGE_ALLOW_PRIVATE_ENDPOINTS=true` небезопасным исключением только для
+локальной разработки и никогда не используйте его в рабочем окружении.
