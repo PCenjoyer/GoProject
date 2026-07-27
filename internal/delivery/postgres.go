@@ -72,7 +72,7 @@ func (s *PostgresStore) Claim(
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Task{}, false, nil
 		}
-		return Task{}, false, fmt.Errorf("claim delivery: %w", err)
+		return Task{}, false, fmt.Errorf("получение доставки: %w", err)
 	}
 	task.Secret, err = s.secretBox.Decrypt(
 		ciphertext,
@@ -80,7 +80,7 @@ func (s *PostgresStore) Claim(
 		secretbox.AssociatedData(task.TenantID, task.EndpointID),
 	)
 	if err != nil {
-		return Task{}, false, fmt.Errorf("decrypt claimed endpoint secret: %w", err)
+		return Task{}, false, fmt.Errorf("расшифровка секрета полученной точки: %w", err)
 	}
 	return task, true, nil
 }
@@ -102,10 +102,10 @@ func (s *PostgresStore) Defer(
 		task.DeliveryID, workerID, nextTryAt,
 	)
 	if err != nil {
-		return fmt.Errorf("defer delivery: %w", err)
+		return fmt.Errorf("откладывание доставки: %w", err)
 	}
 	if tag.RowsAffected() != 1 {
-		return fmt.Errorf("defer delivery: claim lost")
+		return fmt.Errorf("откладывание доставки: блокировка потеряна")
 	}
 	return nil
 }
@@ -118,7 +118,7 @@ func (s *PostgresStore) Finish(
 ) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin finish delivery: %w", err)
+		return fmt.Errorf("начало завершения доставки: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -152,10 +152,10 @@ func (s *PostgresStore) Finish(
 		lastError,
 	)
 	if err != nil {
-		return fmt.Errorf("update delivery result: %w", err)
+		return fmt.Errorf("обновление результата доставки: %w", err)
 	}
 	if tag.RowsAffected() != 1 {
-		return fmt.Errorf("finish delivery: claim lost")
+		return fmt.Errorf("завершение доставки: блокировка потеряна")
 	}
 	duration := result.FinishedAt.Sub(result.StartedAt).Milliseconds()
 	if duration < 0 {
@@ -174,10 +174,10 @@ func (s *PostgresStore) Finish(
 		lastError,
 		duration,
 	); err != nil {
-		return fmt.Errorf("insert delivery attempt: %w", err)
+		return fmt.Errorf("сохранение попытки доставки: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit delivery result: %w", err)
+		return fmt.Errorf("фиксация результата доставки: %w", err)
 	}
 	return nil
 }

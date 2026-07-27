@@ -80,7 +80,7 @@ func NewRunner(
 			Transport: transport,
 			Timeout:   cfg.DeliveryTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
-				return errors.New("webhook redirects are disabled")
+				return errors.New("перенаправления вебхуков запрещены")
 			},
 		},
 		logger:   logger,
@@ -113,7 +113,7 @@ func (r *Runner) Run(ctx context.Context) {
 		}(i + 1)
 	}
 	workers.Wait()
-	r.logger.Info("delivery workers stopped")
+	r.logger.Info("обработчики доставки остановлены")
 }
 
 func (r *Runner) worker(ctx context.Context, workerNumber int) {
@@ -131,7 +131,7 @@ func (r *Runner) worker(ctx context.Context, workerNumber int) {
 		if err != nil {
 			r.metrics.ClaimFailed()
 			if !errors.Is(err, context.Canceled) {
-				r.logger.Error("claim failed", "worker", workerNumber, "error", err)
+				r.logger.Error("не удалось получить доставку", "worker", workerNumber, "error", err)
 			}
 			timer.Reset(r.cfg.PollInterval)
 			continue
@@ -148,7 +148,7 @@ func (r *Runner) worker(ctx context.Context, workerNumber int) {
 			err := r.store.Defer(deferCtx, r.workerID, task, next)
 			cancel()
 			if err != nil {
-				r.logger.Error("defer saturated endpoint", "delivery_id", task.DeliveryID, "error", err)
+				r.logger.Error("не удалось отложить доставку перегруженному получателю", "delivery_id", task.DeliveryID, "error", err)
 			}
 			timer.Reset(r.cfg.PollInterval)
 			continue
@@ -175,7 +175,7 @@ func (r *Runner) process(task Task) {
 	if deliveryErr != nil {
 		result.Error = deliveryErr.Error()
 	} else if statusCode != nil && (*statusCode < 200 || *statusCode >= 300) {
-		result.Error = fmt.Sprintf("receiver returned HTTP %d", *statusCode)
+		result.Error = fmt.Sprintf("получатель вернул HTTP %d", *statusCode)
 	}
 
 	switch {
@@ -201,14 +201,14 @@ func (r *Runner) process(task Task) {
 	persistCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := r.store.Finish(persistCtx, r.workerID, task, result); err != nil {
-		r.logger.Error("persist delivery result",
+		r.logger.Error("не удалось сохранить результат доставки",
 			"delivery_id", task.DeliveryID,
 			"attempt", task.Attempt,
 			"error", err,
 		)
 		return
 	}
-	r.logger.Info("delivery finished",
+	r.logger.Info("доставка завершена",
 		"delivery_id", task.DeliveryID,
 		"endpoint_id", task.EndpointID,
 		"attempt", task.Attempt,
@@ -226,14 +226,14 @@ func (r *Runner) send(task Task, now time.Time) (*int, error) {
 		"payload":    task.Payload,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("encode webhook body: %w", err)
+		return nil, fmt.Errorf("кодирование тела вебхука: %w", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), r.cfg.DeliveryTimeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, task.URL, bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("build webhook request: %w", err)
+		return nil, fmt.Errorf("создание запроса вебхука: %w", err)
 	}
 	timestamp := strconv.FormatInt(now.Unix(), 10)
 	request.Header.Set("Content-Type", "application/json")
@@ -245,7 +245,7 @@ func (r *Runner) send(task Task, now time.Time) (*int, error) {
 
 	response, err := r.client.Do(request)
 	if err != nil {
-		return nil, fmt.Errorf("send webhook: %w", err)
+		return nil, fmt.Errorf("отправка вебхука: %w", err)
 	}
 	defer response.Body.Close()
 	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, maxResponseBody))

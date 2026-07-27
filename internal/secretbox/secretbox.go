@@ -18,18 +18,18 @@ type Box struct {
 func New(encodedKey string) (*Box, error) {
 	key, err := base64.RawStdEncoding.DecodeString(encodedKey)
 	if err != nil {
-		return nil, fmt.Errorf("decode HOOKFORGE_SECRET_ENCRYPTION_KEY: %w", err)
+		return nil, fmt.Errorf("декодирование HOOKFORGE_SECRET_ENCRYPTION_KEY: %w", err)
 	}
 	if len(key) != KeySize {
-		return nil, fmt.Errorf("HOOKFORGE_SECRET_ENCRYPTION_KEY must decode to %d bytes", KeySize)
+		return nil, fmt.Errorf("HOOKFORGE_SECRET_ENCRYPTION_KEY после декодирования должен содержать %d байт", KeySize)
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return nil, fmt.Errorf("create AES cipher: %w", err)
+		return nil, fmt.Errorf("создание шифра AES: %w", err)
 	}
 	aead, err := cipher.NewGCM(block)
 	if err != nil {
-		return nil, fmt.Errorf("create AES-GCM: %w", err)
+		return nil, fmt.Errorf("создание AES-GCM: %w", err)
 	}
 	return &Box{aead: aead}, nil
 }
@@ -37,18 +37,18 @@ func New(encodedKey string) (*Box, error) {
 func GenerateKey() (string, error) {
 	key := make([]byte, KeySize)
 	if _, err := rand.Read(key); err != nil {
-		return "", fmt.Errorf("generate encryption key: %w", err)
+		return "", fmt.Errorf("создание ключа шифрования: %w", err)
 	}
 	return base64.RawStdEncoding.EncodeToString(key), nil
 }
 
 func (b *Box) Encrypt(plaintext string, associatedData []byte) (ciphertext, nonce []byte, err error) {
 	if plaintext == "" {
-		return nil, nil, errors.New("refusing to encrypt an empty secret")
+		return nil, nil, errors.New("нельзя зашифровать пустой секрет")
 	}
 	nonce = make([]byte, b.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
-		return nil, nil, fmt.Errorf("generate encryption nonce: %w", err)
+		return nil, nil, fmt.Errorf("создание nonce для шифрования: %w", err)
 	}
 	ciphertext = b.aead.Seal(nil, nonce, []byte(plaintext), associatedData)
 	return ciphertext, nonce, nil
@@ -56,11 +56,11 @@ func (b *Box) Encrypt(plaintext string, associatedData []byte) (ciphertext, nonc
 
 func (b *Box) Decrypt(ciphertext, nonce, associatedData []byte) (string, error) {
 	if len(nonce) != b.aead.NonceSize() {
-		return "", errors.New("invalid encrypted secret nonce")
+		return "", errors.New("недопустимый nonce зашифрованного секрета")
 	}
 	plaintext, err := b.aead.Open(nil, nonce, ciphertext, associatedData)
 	if err != nil {
-		return "", errors.New("decrypt endpoint secret: authentication failed")
+		return "", errors.New("расшифровка секрета точки назначения: проверка подлинности не пройдена")
 	}
 	return string(plaintext), nil
 }

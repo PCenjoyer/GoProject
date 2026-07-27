@@ -24,8 +24,8 @@ const (
 var tenantSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 
 var (
-	ErrInvalidCredentials = errors.New("invalid API key")
-	ErrNoAPIKeys          = errors.New("no API keys are configured")
+	ErrInvalidCredentials = errors.New("недействительный API-ключ")
+	ErrNoAPIKeys          = errors.New("API-ключи не настроены")
 )
 
 type Principal struct {
@@ -101,7 +101,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Principal, er
 		if errors.Is(err, ErrInvalidCredentials) {
 			return Principal{}, ErrInvalidCredentials
 		}
-		return Principal{}, fmt.Errorf("look up API key: %w", err)
+		return Principal{}, fmt.Errorf("поиск API-ключа: %w", err)
 	}
 	actualHash := Hash(token)
 	if len(candidate.KeyHash) != sha256.Size ||
@@ -109,7 +109,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (Principal, er
 		return Principal{}, ErrInvalidCredentials
 	}
 	if err := s.repository.MarkUsed(ctx, candidate.Principal.APIKeyID); err != nil {
-		return Principal{}, fmt.Errorf("mark API key used: %w", err)
+		return Principal{}, fmt.Errorf("обновление времени использования API-ключа: %w", err)
 	}
 	return candidate.Principal, nil
 }
@@ -123,7 +123,7 @@ func (s *Service) EnsureBootstrap(
 	}
 	count, err := s.repository.KeyCount(ctx)
 	if err != nil {
-		return fmt.Errorf("count API keys: %w", err)
+		return fmt.Errorf("подсчёт API-ключей: %w", err)
 	}
 	if token == "" {
 		if count == 0 {
@@ -133,10 +133,10 @@ func (s *Service) EnsureBootstrap(
 	}
 	prefix, err := Prefix(token)
 	if err != nil {
-		return errors.New("HOOKFORGE_BOOTSTRAP_API_KEY has an invalid format; generate it with `hookforge generate-secrets`")
+		return errors.New("HOOKFORGE_BOOTSTRAP_API_KEY имеет неверный формат; создайте ключ командой `hookforge generate-secrets`")
 	}
 	if err := s.repository.Bootstrap(ctx, tenantSlug, tenantName, prefix, Hash(token)); err != nil {
-		return fmt.Errorf("bootstrap tenant: %w", err)
+		return fmt.Errorf("создание начальной организации: %w", err)
 	}
 	return nil
 }
@@ -154,18 +154,18 @@ func (s *Service) ProvisionTenant(ctx context.Context, slug, name string) (strin
 		return "", err
 	}
 	if err := s.repository.ProvisionTenant(ctx, slug, name, prefix, Hash(token)); err != nil {
-		return "", fmt.Errorf("provision tenant: %w", err)
+		return "", fmt.Errorf("создание организации: %w", err)
 	}
 	return token, nil
 }
 
 func ValidateTenant(slug, name string) error {
 	if !tenantSlugPattern.MatchString(slug) {
-		return errors.New("tenant slug must contain 2 to 63 lowercase letters, digits, or hyphens")
+		return errors.New("slug организации должен содержать от 2 до 63 строчных латинских букв, цифр или дефисов")
 	}
 	name = strings.TrimSpace(name)
 	if len(name) < 1 || len(name) > 120 {
-		return errors.New("tenant name must contain 1 to 120 characters")
+		return errors.New("название организации должно содержать от 1 до 120 символов")
 	}
 	return nil
 }
@@ -206,7 +206,7 @@ type principalContextKey struct{}
 func randomBase64(size int) (string, error) {
 	value := make([]byte, size)
 	if _, err := rand.Read(value); err != nil {
-		return "", fmt.Errorf("generate secure token: %w", err)
+		return "", fmt.Errorf("создание защищённого токена: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(value), nil
 }
@@ -218,7 +218,7 @@ func writeUnauthorized(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{
 			"code":    "unauthorized",
-			"message": "a valid Bearer API key is required",
+			"message": "требуется действительный Bearer API-ключ",
 		},
 	})
 }
@@ -230,7 +230,7 @@ func writeAuthUnavailable(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"error": map[string]string{
 			"code":    "authentication_unavailable",
-			"message": "authentication is temporarily unavailable",
+			"message": "аутентификация временно недоступна",
 		},
 	})
 }

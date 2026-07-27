@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	ErrNotFound        = errors.New("not found")
-	ErrInvalidEndpoint = errors.New("one or more endpoints do not exist or are disabled")
+	ErrNotFound        = errors.New("не найдено")
+	ErrInvalidEndpoint = errors.New("одна или несколько точек назначения не существуют или отключены")
 )
 
 type CreateEndpointParams struct {

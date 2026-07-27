@@ -45,7 +45,7 @@ func (a *API) Routes() http.Handler {
 func (a *API) me(w http.ResponseWriter, r *http.Request) {
 	principal, ok := auth.PrincipalFromContext(r.Context())
 	if !ok {
-		panic("authenticated route called without tenant principal")
+		panic("защищённый маршрут вызван без данных организации")
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"tenant": map[string]string{
@@ -73,7 +73,7 @@ func (a *API) createEndpoint(w http.ResponseWriter, r *http.Request) {
 	input.Name = strings.TrimSpace(input.Name)
 	input.URL = strings.TrimSpace(input.URL)
 	if input.Name == "" || len(input.Name) > 120 {
-		writeError(w, http.StatusUnprocessableEntity, "validation_error", "name must contain 1 to 120 characters")
+		writeError(w, http.StatusUnprocessableEntity, "validation_error", "название должно содержать от 1 до 120 символов")
 		return
 	}
 	if err := a.ssrf.ValidateURL(r.Context(), input.URL); err != nil {
@@ -124,7 +124,7 @@ type createEventRequest struct {
 func (a *API) createEvent(w http.ResponseWriter, r *http.Request) {
 	idempotencyKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if idempotencyKey == "" || len(idempotencyKey) > 200 {
-		writeError(w, http.StatusBadRequest, "invalid_idempotency_key", "Idempotency-Key header must contain 1 to 200 characters")
+		writeError(w, http.StatusBadRequest, "invalid_idempotency_key", "заголовок Idempotency-Key должен содержать от 1 до 200 символов")
 		return
 	}
 	var input createEventRequest
@@ -134,19 +134,19 @@ func (a *API) createEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	input.Type = strings.TrimSpace(input.Type)
 	if input.Type == "" || len(input.Type) > 120 {
-		writeError(w, http.StatusUnprocessableEntity, "validation_error", "type must contain 1 to 120 characters")
+		writeError(w, http.StatusUnprocessableEntity, "validation_error", "тип события должен содержать от 1 до 120 символов")
 		return
 	}
 	if len(input.Payload) == 0 || !json.Valid(input.Payload) {
-		writeError(w, http.StatusUnprocessableEntity, "validation_error", "payload must be valid JSON")
+		writeError(w, http.StatusUnprocessableEntity, "validation_error", "данные события должны быть корректным JSON")
 		return
 	}
 	if len(input.EndpointIDs) == 0 || len(input.EndpointIDs) > 100 {
-		writeError(w, http.StatusUnprocessableEntity, "validation_error", "endpoint_ids must contain 1 to 100 IDs")
+		writeError(w, http.StatusUnprocessableEntity, "validation_error", "endpoint_ids должен содержать от 1 до 100 идентификаторов")
 		return
 	}
 	if hasDuplicate(input.EndpointIDs) {
-		writeError(w, http.StatusUnprocessableEntity, "validation_error", "endpoint_ids must be unique")
+		writeError(w, http.StatusUnprocessableEntity, "validation_error", "значения endpoint_ids не должны повторяться")
 		return
 	}
 
@@ -178,7 +178,7 @@ func (a *API) createEvent(w http.ResponseWriter, r *http.Request) {
 func (a *API) getEvent(w http.ResponseWriter, r *http.Request) {
 	event, err := a.store.GetEvent(r.Context(), tenantID(r), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "not_found", "event not found")
+		writeError(w, http.StatusNotFound, "not_found", "событие не найдено")
 		return
 	}
 	if err != nil {
@@ -196,7 +196,7 @@ func (a *API) listDeliveries(w http.ResponseWriter, r *http.Request) {
 	}
 	status := domain.DeliveryStatus(r.URL.Query().Get("status"))
 	if status != "" && !validStatus(status) {
-		writeError(w, http.StatusBadRequest, "invalid_request", "unknown delivery status")
+		writeError(w, http.StatusBadRequest, "invalid_request", "неизвестное состояние доставки")
 		return
 	}
 	deliveries, err := a.store.ListDeliveries(r.Context(), store.DeliveryFilter{
@@ -214,7 +214,7 @@ func (a *API) listDeliveries(w http.ResponseWriter, r *http.Request) {
 func (a *API) replayDelivery(w http.ResponseWriter, r *http.Request) {
 	err := a.store.ReplayDelivery(r.Context(), tenantID(r), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
-		writeError(w, http.StatusNotFound, "not_found", "dead-letter delivery not found")
+		writeError(w, http.StatusNotFound, "not_found", "доставка в DLQ не найдена")
 		return
 	}
 	if err != nil {
@@ -225,14 +225,14 @@ func (a *API) replayDelivery(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) internalError(w http.ResponseWriter, r *http.Request, err error) {
-	a.logger.Error("request failed", "method", r.Method, "path", r.URL.Path, "error", err)
-	writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+	a.logger.Error("ошибка обработки запроса", "method", r.Method, "path", r.URL.Path, "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка сервера")
 }
 
 func generateSecret() (string, error) {
 	value := make([]byte, 32)
 	if _, err := rand.Read(value); err != nil {
-		return "", fmt.Errorf("generate endpoint secret: %w", err)
+		return "", fmt.Errorf("создание секрета точки назначения: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(value), nil
 }
@@ -240,7 +240,7 @@ func generateSecret() (string, error) {
 func tenantID(r *http.Request) string {
 	principal, ok := auth.PrincipalFromContext(r.Context())
 	if !ok {
-		panic("authenticated route called without tenant principal")
+		panic("защищённый маршрут вызван без данных организации")
 	}
 	return principal.TenantID
 }
@@ -253,7 +253,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 		return err
 	}
 	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
-		return errors.New("request body must contain one JSON object")
+		return errors.New("тело запроса должно содержать один JSON-объект")
 	}
 	return nil
 }
@@ -265,7 +265,7 @@ func queryLimit(r *http.Request, fallback int) (int, error) {
 	}
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 1 || value > 200 {
-		return 0, errors.New("limit must be between 1 and 200")
+		return 0, errors.New("параметр limit должен быть от 1 до 200")
 	}
 	return value, nil
 }
@@ -307,8 +307,8 @@ func recoverPanic(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
-				logger.Error("request panicked", "method", r.Method, "path", r.URL.Path, "panic", recovered)
-				writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
+				logger.Error("паника при обработке запроса", "method", r.Method, "path", r.URL.Path, "panic", recovered)
+				writeError(w, http.StatusInternalServerError, "internal_error", "внутренняя ошибка сервера")
 			}
 		}()
 		next.ServeHTTP(w, r)
@@ -317,7 +317,7 @@ func recoverPanic(logger *slog.Logger, next http.Handler) http.Handler {
 
 func requestLog(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		logger.Debug("request", "method", r.Method, "path", r.URL.Path)
+		logger.Debug("HTTP-запрос", "method", r.Method, "path", r.URL.Path)
 		next.ServeHTTP(w, r)
 	})
 }

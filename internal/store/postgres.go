@@ -23,7 +23,7 @@ func NewPostgres(pool *pgxpool.Pool, box *secretbox.Box) *Postgres {
 func (s *Postgres) CreateEndpoint(ctx context.Context, params CreateEndpointParams) (domain.Endpoint, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return domain.Endpoint{}, fmt.Errorf("begin create endpoint: %w", err)
+		return domain.Endpoint{}, fmt.Errorf("начало создания точки назначения: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -42,7 +42,7 @@ func (s *Postgres) CreateEndpoint(ctx context.Context, params CreateEndpointPara
 		&endpoint.UpdatedAt,
 	)
 	if err != nil {
-		return domain.Endpoint{}, fmt.Errorf("create endpoint: %w", err)
+		return domain.Endpoint{}, fmt.Errorf("создание точки назначения: %w", err)
 	}
 	ciphertext, nonce, err := s.secretBox.Encrypt(
 		params.Secret,
@@ -57,10 +57,10 @@ func (s *Postgres) CreateEndpoint(ctx context.Context, params CreateEndpointPara
 		WHERE id = $1`,
 		endpoint.ID, ciphertext, nonce,
 	); err != nil {
-		return domain.Endpoint{}, fmt.Errorf("encrypt endpoint secret: %w", err)
+		return domain.Endpoint{}, fmt.Errorf("шифрование секрета точки назначения: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return domain.Endpoint{}, fmt.Errorf("commit create endpoint: %w", err)
+		return domain.Endpoint{}, fmt.Errorf("фиксация создания точки назначения: %w", err)
 	}
 	return endpoint, nil
 }
@@ -73,7 +73,7 @@ func (s *Postgres) ListEndpoints(ctx context.Context, tenantID string, limit int
 		ORDER BY created_at DESC
 		LIMIT $2`, tenantID, limit)
 	if err != nil {
-		return nil, fmt.Errorf("list endpoints: %w", err)
+		return nil, fmt.Errorf("получение списка точек назначения: %w", err)
 	}
 	defer rows.Close()
 
@@ -88,7 +88,7 @@ func (s *Postgres) ListEndpoints(ctx context.Context, tenantID string, limit int
 			&endpoint.CreatedAt,
 			&endpoint.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scan endpoint: %w", err)
+			return nil, fmt.Errorf("чтение точки назначения: %w", err)
 		}
 		endpoints = append(endpoints, endpoint)
 	}
@@ -98,7 +98,7 @@ func (s *Postgres) ListEndpoints(ctx context.Context, tenantID string, limit int
 func (s *Postgres) CreateEvent(ctx context.Context, params CreateEventParams) (EventResult, error) {
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
 	if err != nil {
-		return EventResult{}, fmt.Errorf("begin create event: %w", err)
+		return EventResult{}, fmt.Errorf("начало создания события: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -132,7 +132,7 @@ func (s *Postgres) CreateEvent(ctx context.Context, params CreateEventParams) (E
 		)
 	}
 	if err != nil {
-		return EventResult{}, fmt.Errorf("insert or find event: %w", err)
+		return EventResult{}, fmt.Errorf("сохранение или поиск события: %w", err)
 	}
 
 	if !result.Duplicate {
@@ -146,7 +146,7 @@ func (s *Postgres) CreateEvent(ctx context.Context, params CreateEventParams) (E
 			result.Event.ID, params.TenantID, params.EndpointIDs,
 		)
 		if err != nil {
-			return EventResult{}, fmt.Errorf("create event deliveries: %w", err)
+			return EventResult{}, fmt.Errorf("создание доставок события: %w", err)
 		}
 		if tag.RowsAffected() != int64(len(params.EndpointIDs)) {
 			return EventResult{}, ErrInvalidEndpoint
@@ -154,7 +154,7 @@ func (s *Postgres) CreateEvent(ctx context.Context, params CreateEventParams) (E
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return EventResult{}, fmt.Errorf("commit create event: %w", err)
+		return EventResult{}, fmt.Errorf("фиксация создания события: %w", err)
 	}
 	return result, nil
 }
@@ -171,7 +171,7 @@ func (s *Postgres) GetEvent(ctx context.Context, tenantID, id string) (domain.Ev
 		return domain.Event{}, ErrNotFound
 	}
 	if err != nil {
-		return domain.Event{}, fmt.Errorf("get event: %w", err)
+		return domain.Event{}, fmt.Errorf("получение события: %w", err)
 	}
 	return event, nil
 }
@@ -190,7 +190,7 @@ func (s *Postgres) ListDeliveries(ctx context.Context, filter DeliveryFilter) ([
 		filter.TenantID, filter.Status, filter.Limit,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("list deliveries: %w", err)
+		return nil, fmt.Errorf("получение списка доставок: %w", err)
 	}
 	defer rows.Close()
 
@@ -209,7 +209,7 @@ func (s *Postgres) ListDeliveries(ctx context.Context, filter DeliveryFilter) ([
 			&delivery.CreatedAt,
 			&delivery.UpdatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("scan delivery: %w", err)
+			return nil, fmt.Errorf("чтение доставки: %w", err)
 		}
 		deliveries = append(deliveries, delivery)
 	}
@@ -235,7 +235,7 @@ func (s *Postgres) ReplayDelivery(ctx context.Context, tenantID, id string) erro
 		id, tenantID,
 	)
 	if err != nil {
-		return fmt.Errorf("replay delivery: %w", err)
+		return fmt.Errorf("повтор доставки: %w", err)
 	}
 	if tag.RowsAffected() != 1 {
 		return ErrNotFound
@@ -249,7 +249,7 @@ func (s *Postgres) EncryptLegacyEndpointSecrets(ctx context.Context) (int, error
 		FROM endpoints
 		WHERE secret IS NOT NULL`)
 	if err != nil {
-		return 0, fmt.Errorf("list legacy endpoint secrets: %w", err)
+		return 0, fmt.Errorf("получение старых секретов точек назначения: %w", err)
 	}
 	type legacySecret struct {
 		endpointID string
@@ -261,13 +261,13 @@ func (s *Postgres) EncryptLegacyEndpointSecrets(ctx context.Context) (int, error
 		var item legacySecret
 		if err := rows.Scan(&item.endpointID, &item.tenantID, &item.plaintext); err != nil {
 			rows.Close()
-			return 0, fmt.Errorf("scan legacy endpoint secret: %w", err)
+			return 0, fmt.Errorf("чтение старого секрета точки назначения: %w", err)
 		}
 		legacy = append(legacy, item)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return 0, fmt.Errorf("iterate legacy endpoint secrets: %w", err)
+		return 0, fmt.Errorf("обход старых секретов точек назначения: %w", err)
 	}
 	rows.Close()
 
@@ -289,7 +289,7 @@ func (s *Postgres) EncryptLegacyEndpointSecrets(ctx context.Context) (int, error
 			item.endpointID, ciphertext, nonce,
 		)
 		if err != nil {
-			return 0, fmt.Errorf("migrate legacy endpoint secret: %w", err)
+			return 0, fmt.Errorf("перенос старого секрета точки назначения: %w", err)
 		}
 		if tag.RowsAffected() != 1 {
 			continue

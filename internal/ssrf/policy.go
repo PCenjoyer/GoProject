@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-var ErrBlockedAddress = errors.New("endpoint resolves to a non-public network address")
+var ErrBlockedAddress = errors.New("точка назначения разрешается в непубличный сетевой адрес")
 
 type Resolver interface {
 	LookupNetIP(context.Context, string, string) ([]netip.Addr, error)
@@ -44,7 +44,7 @@ func (p *Policy) ValidateURL(ctx context.Context, raw string) error {
 func (p *Policy) DialContext(ctx context.Context, network, address string) (net.Conn, error) {
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return nil, fmt.Errorf("parse outbound address: %w", err)
+		return nil, fmt.Errorf("разбор исходящего адреса: %w", err)
 	}
 	addresses, err := p.resolveAllowed(ctx, host)
 	if err != nil {
@@ -58,27 +58,27 @@ func (p *Policy) DialContext(ctx context.Context, network, address string) (net.
 		}
 		dialErrors = append(dialErrors, err)
 	}
-	return nil, fmt.Errorf("dial endpoint: %w", errors.Join(dialErrors...))
+	return nil, fmt.Errorf("подключение к точке назначения: %w", errors.Join(dialErrors...))
 }
 
 func parseEndpointURL(raw string) (*url.URL, error) {
 	parsed, err := url.ParseRequestURI(raw)
 	if err != nil || parsed.Hostname() == "" || !parsed.IsAbs() {
-		return nil, errors.New("url must be an absolute HTTP(S) URL")
+		return nil, errors.New("URL должен быть абсолютным адресом HTTP(S)")
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, errors.New("url scheme must be http or https")
+		return nil, errors.New("схема URL должна быть http или https")
 	}
 	if parsed.User != nil {
-		return nil, errors.New("url must not contain credentials")
+		return nil, errors.New("URL не должен содержать учётные данные")
 	}
 	if parsed.Fragment != "" {
-		return nil, errors.New("url must not contain a fragment")
+		return nil, errors.New("URL не должен содержать фрагмент")
 	}
 	if port := parsed.Port(); port != "" {
 		value, err := strconv.Atoi(port)
 		if err != nil || value < 1 || value > 65535 {
-			return nil, errors.New("url contains an invalid port")
+			return nil, errors.New("URL содержит недопустимый порт")
 		}
 	}
 	return parsed, nil
@@ -97,12 +97,12 @@ func (p *Policy) resolveAllowed(ctx context.Context, host string) ([]netip.Addr,
 	} else {
 		resolved, err := p.resolver.LookupNetIP(ctx, "ip", normalized)
 		if err != nil {
-			return nil, fmt.Errorf("resolve endpoint hostname: %w", err)
+			return nil, fmt.Errorf("разрешение имени точки назначения: %w", err)
 		}
 		addresses = resolved
 	}
 	if len(addresses) == 0 {
-		return nil, errors.New("endpoint hostname has no IP addresses")
+		return nil, errors.New("имя точки назначения не имеет IP-адресов")
 	}
 
 	allowed := make([]netip.Addr, 0, len(addresses))

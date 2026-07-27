@@ -1,4 +1,4 @@
-name: CI
+name: Проверки
 
 on:
   push:
@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   test:
+    name: Тесты и анализ
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -24,6 +25,7 @@ jobs:
       - run: go build ./cmd/hookforge
 
   container:
+    name: Сборка контейнера
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -35,6 +37,7 @@ jobs:
           tags: hookforge:ci
 
   integration:
+    name: Интеграция с PostgreSQL
     runs-on: ubuntu-latest
     services:
       postgres:

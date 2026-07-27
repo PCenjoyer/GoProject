@@ -17,17 +17,17 @@ var migrations embed.FS
 func Open(ctx context.Context, databaseURL string, maxConns int32) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
-		return nil, fmt.Errorf("parse database config: %w", err)
+		return nil, fmt.Errorf("разбор конфигурации базы данных: %w", err)
 	}
 	cfg.MaxConns = maxConns
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("create database pool: %w", err)
+		return nil, fmt.Errorf("создание пула подключений к базе: %w", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, fmt.Errorf("ping database: %w", err)
+		return nil, fmt.Errorf("проверка подключения к базе: %w", err)
 	}
 	return pool, nil
 }
@@ -38,12 +38,12 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error
 			version text PRIMARY KEY,
 			applied_at timestamptz NOT NULL DEFAULT now()
 		)`); err != nil {
-		return fmt.Errorf("create migration table: %w", err)
+		return fmt.Errorf("создание таблицы миграций: %w", err)
 	}
 
 	entries, err := fs.ReadDir(migrations, "migrations")
 	if err != nil {
-		return fmt.Errorf("read embedded migrations: %w", err)
+		return fmt.Errorf("чтение встроенных миграций: %w", err)
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 
@@ -56,7 +56,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error
 			`SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = $1)`,
 			entry.Name(),
 		).Scan(&applied); err != nil {
-			return fmt.Errorf("check migration %s: %w", entry.Name(), err)
+			return fmt.Errorf("проверка миграции %s: %w", entry.Name(), err)
 		}
 		if applied {
 			continue
@@ -64,23 +64,23 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, logger *slog.Logger) error
 
 		body, err := migrations.ReadFile("migrations/" + entry.Name())
 		if err != nil {
-			return fmt.Errorf("read migration %s: %w", entry.Name(), err)
+			return fmt.Errorf("чтение миграции %s: %w", entry.Name(), err)
 		}
 		tx, err := pool.Begin(ctx)
 		if err != nil {
-			return fmt.Errorf("begin migration %s: %w", entry.Name(), err)
+			return fmt.Errorf("начало миграции %s: %w", entry.Name(), err)
 		}
 		if _, err = tx.Exec(ctx, string(body)); err == nil {
 			_, err = tx.Exec(ctx, `INSERT INTO schema_migrations(version) VALUES ($1)`, entry.Name())
 		}
 		if err != nil {
 			_ = tx.Rollback(ctx)
-			return fmt.Errorf("apply migration %s: %w", entry.Name(), err)
+			return fmt.Errorf("применение миграции %s: %w", entry.Name(), err)
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("commit migration %s: %w", entry.Name(), err)
+			return fmt.Errorf("фиксация миграции %s: %w", entry.Name(), err)
 		}
-		logger.Info("migration applied", "version", entry.Name())
+		logger.Info("миграция применена", "version", entry.Name())
 	}
 	return nil
 }

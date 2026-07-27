@@ -36,7 +36,7 @@ func (r *PostgresRepository) FindCandidate(ctx context.Context, prefix string) (
 		return Candidate{}, ErrInvalidCredentials
 	}
 	if err != nil {
-		return Candidate{}, fmt.Errorf("find API key: %w", err)
+		return Candidate{}, fmt.Errorf("поиск API-ключа: %w", err)
 	}
 	return candidate, nil
 }
@@ -50,7 +50,7 @@ func (r *PostgresRepository) MarkUsed(ctx context.Context, keyID string) error {
 		keyID,
 	)
 	if err != nil {
-		return fmt.Errorf("update API key usage: %w", err)
+		return fmt.Errorf("обновление использования API-ключа: %w", err)
 	}
 	return nil
 }
@@ -58,7 +58,7 @@ func (r *PostgresRepository) MarkUsed(ctx context.Context, keyID string) error {
 func (r *PostgresRepository) KeyCount(ctx context.Context) (int, error) {
 	var count int
 	if err := r.pool.QueryRow(ctx, `SELECT count(*) FROM api_keys WHERE revoked_at IS NULL`).Scan(&count); err != nil {
-		return 0, fmt.Errorf("count API keys: %w", err)
+		return 0, fmt.Errorf("подсчёт API-ключей: %w", err)
 	}
 	return count, nil
 }
@@ -70,7 +70,7 @@ func (r *PostgresRepository) Bootstrap(
 ) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin bootstrap: %w", err)
+		return fmt.Errorf("начало создания начальной организации: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -82,7 +82,7 @@ func (r *PostgresRepository) Bootstrap(
 		RETURNING id::text`,
 		slug, name,
 	).Scan(&tenantID); err != nil {
-		return fmt.Errorf("upsert bootstrap tenant: %w", err)
+		return fmt.Errorf("сохранение начальной организации: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		UPDATE api_keys
@@ -93,7 +93,7 @@ func (r *PostgresRepository) Bootstrap(
 		  AND revoked_at IS NULL`,
 		tenantID, prefix,
 	); err != nil {
-		return fmt.Errorf("revoke replaced bootstrap API key: %w", err)
+		return fmt.Errorf("отзыв заменённого начального API-ключа: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO api_keys (tenant_id, name, key_prefix, key_hash)
@@ -105,7 +105,7 @@ func (r *PostgresRepository) Bootstrap(
 		    revoked_at = NULL`,
 		tenantID, prefix, hash,
 	); err != nil {
-		return fmt.Errorf("insert bootstrap API key: %w", err)
+		return fmt.Errorf("сохранение начального API-ключа: %w", err)
 	}
 	return tx.Commit(ctx)
 }
@@ -117,7 +117,7 @@ func (r *PostgresRepository) ProvisionTenant(
 ) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin tenant provision: %w", err)
+		return fmt.Errorf("начало создания организации: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -128,14 +128,14 @@ func (r *PostgresRepository) ProvisionTenant(
 		RETURNING id::text`,
 		slug, name,
 	).Scan(&tenantID); err != nil {
-		return fmt.Errorf("insert tenant: %w", err)
+		return fmt.Errorf("сохранение организации: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO api_keys (tenant_id, name, key_prefix, key_hash)
 		VALUES ($1, 'initial', $2, $3)`,
 		tenantID, prefix, hash,
 	); err != nil {
-		return fmt.Errorf("insert tenant API key: %w", err)
+		return fmt.Errorf("сохранение API-ключа организации: %w", err)
 	}
 	return tx.Commit(ctx)
 }

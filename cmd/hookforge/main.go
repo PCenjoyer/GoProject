@@ -38,7 +38,7 @@ func main() {
 	}
 	logger := newLogger()
 	if err := run(logger); err != nil {
-		logger.Error("hookforge stopped", "error", err)
+		logger.Error("HookForge остановлен с ошибкой", "error", err)
 		os.Exit(1)
 	}
 }
@@ -70,7 +70,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	if encrypted > 0 {
-		logger.Info("legacy endpoint secrets encrypted", "count", encrypted)
+		logger.Info("старые секреты точек назначения зашифрованы", "count", encrypted)
 	}
 	if len(os.Args) > 1 && os.Args[1] == "migrate" {
 		return nil
@@ -119,7 +119,7 @@ func run(logger *slog.Logger) error {
 	})
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		if err := pool.Ping(r.Context()); err != nil {
-			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			http.Error(w, "база данных недоступна", http.StatusServiceUnavailable)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
@@ -155,11 +155,11 @@ func run(logger *slog.Logger) error {
 
 	serverErr := make(chan error, 2)
 	go func() {
-		logger.Info("http server started", "address", cfg.HTTPAddr)
+		logger.Info("HTTP-сервер запущен", "address", cfg.HTTPAddr)
 		serverErr <- server.ListenAndServe()
 	}()
 	go func() {
-		logger.Info("diagnostics server started", "address", cfg.DiagnosticsAddr)
+		logger.Info("сервер диагностики запущен", "address", cfg.DiagnosticsAddr)
 		serverErr <- diagnosticsServer.ListenAndServe()
 	}()
 
@@ -216,7 +216,7 @@ func generateSecrets() error {
 func randomOpaqueSecret(size int) (string, error) {
 	value := make([]byte, size)
 	if _, err := rand.Read(value); err != nil {
-		return "", fmt.Errorf("generate setup secret: %w", err)
+		return "", fmt.Errorf("создание настроечного секрета: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(value), nil
 }
@@ -224,8 +224,8 @@ func randomOpaqueSecret(size int) (string, error) {
 func provisionTenant(ctx context.Context, service *auth.Service, args []string) error {
 	flags := flag.NewFlagSet("provision-tenant", flag.ContinueOnError)
 	flags.SetOutput(os.Stderr)
-	slug := flags.String("slug", "", "lowercase tenant slug")
-	name := flags.String("name", "", "tenant display name")
+	slug := flags.String("slug", "", "slug организации строчными латинскими буквами")
+	name := flags.String("name", "", "отображаемое название организации")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -233,7 +233,7 @@ func provisionTenant(ctx context.Context, service *auth.Service, args []string) 
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "Tenant %q provisioned. Save this API key now; it is not stored in plaintext:\n%s\n", *slug, token)
+	fmt.Fprintf(os.Stdout, "Организация %q создана. Сохраните API-ключ сейчас: в открытом виде он не хранится.\n%s\n", *slug, token)
 	return nil
 }
 

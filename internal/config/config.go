@@ -36,7 +36,7 @@ func Load() (Config, error) {
 		SecretEncryptionKey: env("HOOKFORGE_SECRET_ENCRYPTION_KEY", ""),
 		BootstrapAPIKey:     env("HOOKFORGE_BOOTSTRAP_API_KEY", ""),
 		BootstrapTenantSlug: env("HOOKFORGE_BOOTSTRAP_TENANT_SLUG", "default"),
-		BootstrapTenantName: env("HOOKFORGE_BOOTSTRAP_TENANT_NAME", "Default tenant"),
+		BootstrapTenantName: env("HOOKFORGE_BOOTSTRAP_TENANT_NAME", "Основная организация"),
 		DatabaseMaxConns:    20,
 		ShutdownTimeout:     15 * time.Second,
 		WorkerCount:         16,
@@ -73,13 +73,13 @@ func Load() (Config, error) {
 	}
 
 	if cfg.DatabaseURL == "" {
-		return Config{}, errors.New("HOOKFORGE_DATABASE_URL is required")
+		return Config{}, errors.New("требуется переменная HOOKFORGE_DATABASE_URL")
 	}
 	if cfg.SecretEncryptionKey == "" {
-		return Config{}, errors.New("HOOKFORGE_SECRET_ENCRYPTION_KEY is required; run `hookforge generate-secrets`")
+		return Config{}, errors.New("требуется переменная HOOKFORGE_SECRET_ENCRYPTION_KEY; выполните `hookforge generate-secrets`")
 	}
 	if cfg.DatabaseMaxConns < 2 || cfg.WorkerCount < 1 || cfg.MaxAttempts < 1 || cfg.EndpointConcurrency < 1 {
-		return Config{}, errors.New("connection, worker, attempt, and concurrency limits must be positive")
+		return Config{}, errors.New("ограничения подключений, обработчиков, попыток и параллелизма должны быть положительными")
 	}
 	return cfg, nil
 }
